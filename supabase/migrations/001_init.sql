@@ -113,9 +113,10 @@ create table public.vente_lignes (
   lot_id uuid references public.lots on delete set null,
   quantite int not null check (quantite > 0),
   prix_unitaire int not null,
-  prix_achat int not null default 0
+  prix_achat int not null default 0,
+  created_at timestamptz not null default now()
 );
-create index on public.vente_lignes (pharmacy_id, produit_id);
+create index on public.vente_lignes (pharmacy_id, created_at desc);
 
 create table public.mouvements (   -- retraits (destruction), retours grossiste, écarts d'inventaire, entrées
   id uuid primary key default gen_random_uuid(),

@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wergui SN Pharmacie</title>
+<meta name="description" content="Démo de Wergui SN : gestion de stock pour les pharmacies. Alertes de péremption, caisse, suggestions de commande, inventaire. En français, payé en Mobile Money.">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Mise en page : logiciel de gestion — barre latérale (rôle + navigation) + zone de travail ; sur téléphone, onglets défilants en haut */
+:root{
+  --bg:#F2F5F3; --surface:#FFFFFF; --sunk:#E6ECE9; --line:#D3DCD8;
+  --fg:#13201B; --muted:#56675F;
+  --ink:#0A6B4B; --ink-fg:#FFFFFF; --acc:#C98A00; --acc-soft:#FBF0D6;
+  --ok:#1E7A46; --ok-soft:#DFF3E6; --warn:#A35C00; --warn-soft:#FCEBD3; --bad:#B3261E; --bad-soft:#FBE1DE;
+  --wa:#DCF8C6; --wa-fg:#111B21; --wa-bg:#EFE7DD;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1513; --surface:#16211D; --sunk:#1E2B26; --line:#2C3C36;
+  --fg:#E5EEEA; --muted:#98ACA4;
+  --ink:#5CC99F; --ink-fg:#05201A; --acc:#F0B93A; --acc-soft:#3A2E10;
+  --ok:#5BD18C; --ok-soft:#173826; --warn:#F2A54A; --warn-soft:#3B2810; --bad:#FF8A80; --bad-soft:#40201D;
+  --wa:#005C4B; --wa-fg:#E9EDEF; --wa-bg:#0B141A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1513; --surface:#16211D; --sunk:#1E2B26; --line:#2C3C36;
+  --fg:#E5EEEA; --muted:#98ACA4;
+  --ink:#5CC99F; --ink-fg:#05201A; --acc:#F0B93A; --acc-soft:#3A2E10;
+  --ok:#5BD18C; --ok-soft:#173826; --warn:#F2A54A; --warn-soft:#3B2810; --bad:#FF8A80; --bad-soft:#40201D;
+  --wa:#005C4B; --wa-fg:#E9EDEF; --wa-bg:#0B141A; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:1.6rem} h2{font-size:1.2rem} h3{font-size:1rem}
+p{margin:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100%}
+.side{background:var(--ink);color:var(--ink-fg);padding:20px 12px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:9px;padding:0 8px}
+.brand svg{flex:none}
+.brand b{font-family:var(--display);font-size:1.6rem;letter-spacing:-.02em;line-height:1}
+.brand small{display:block;opacity:.78;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase}
+.role{display:flex;flex-direction:column;gap:4px;padding:0 8px}
+.role label{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;opacity:.8}
+.who{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--ink-fg) 14%,transparent);border:1px solid color-mix(in srgb,var(--ink-fg) 28%,transparent)}
+.who:hover{background:color-mix(in srgb,var(--ink-fg) 22%,transparent)}
+.who:focus-visible{outline:3px solid var(--acc)}
+.who .av{width:34px;height:34px;font-size:.8rem;background:var(--ink-fg);color:var(--ink)}
+.who .nm{flex:1;min-width:0;line-height:1.25}
+.who .nm b{display:block;font-size:.92rem;overflow-wrap:anywhere}
+.who .nm small{display:block;font-size:.76rem;opacity:.8}
+.who .chev{flex:none;opacity:.8;font-size:.8rem}
+.pick{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.pick:hover{border-color:var(--ink)} .pick:focus-visible{outline:3px solid var(--acc)}
+.pick[aria-current="true"]{border-color:var(--ink);box-shadow:0 0 0 2px color-mix(in srgb,var(--ink) 25%,transparent)}
+.pick .nm{flex:1;min-width:0} .pick .nm small{display:block;color:var(--muted);font-size:.82rem}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{all:unset;cursor:pointer;padding:9px 12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.95rem}
+.nav button:hover{background:color-mix(in srgb,var(--ink-fg) 12%,transparent)}
+.nav button[aria-current="page"]{background:var(--ink-fg);color:var(--ink);font-weight:700}
+.nav button:focus-visible{outline:3px solid var(--acc)}
+.nav .pill{font-size:.72rem;padding:1px 7px;border-radius:99px;background:var(--acc);color:#2A1D00;font-weight:700}
+.side .foot{margin-top:auto;font-size:.78rem;opacity:.82;padding:0 8px}
+main{padding-block:22px 60px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));min-width:0;display:flex;flex-direction:column;gap:20px;max-width:1240px}
+.top{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-end}
+.top p{margin-top:2px;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{cursor:pointer;border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:8px;font-weight:700;font-size:.9rem;white-space:nowrap}
+.btn:hover{border-color:var(--ink)}
+.btn.pri{background:var(--ink);color:var(--ink-fg);border-color:var(--ink)}
+.btn.wa{background:#1FA855;color:#fff;border-color:#1FA855}
+.btn.bad{color:var(--bad)}
+.btn.sm{padding:4px 10px;font-size:.82rem}
+.btn:disabled{opacity:.5;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:4px;text-align:left}
+button.kpi{cursor:pointer;font:inherit;color:inherit}
+button.kpi:hover{border-color:var(--ink)}
+.kpi span{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.kpi b{font-size:1.45rem}
+.kpi em{font-style:normal;font-size:.82rem;color:var(--muted)}
+.kpi.alert{border-color:var(--bad);background:var(--bad-soft)}
+.kpi.alert b{color:var(--bad)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+.grid2.eq{grid-template-columns:repeat(2,minmax(0,1fr))}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.panel header p{color:var(--muted);font-size:.85rem}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{text-align:left;font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid var(--sunk);vertical-align:middle}
+td small{display:block;color:var(--muted);font-size:.8rem}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--sunk)}
+td.r,th.r{text-align:right}
+tfoot td{font-weight:700;border-top:2px solid var(--line)}
+.st{display:inline-block;font-size:.76rem;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.st.ok{background:var(--ok-soft);color:var(--ok)} .st.warn{background:var(--warn-soft);color:var(--warn)} .st.bad{background:var(--bad-soft);color:var(--bad)} .st.n{background:var(--sunk);color:var(--muted)} .st.acc{background:var(--acc-soft);color:var(--warn)}
+.list{display:flex;flex-direction:column}
+.li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--sunk)}
+.li:last-child{border-bottom:0}
+.li small{display:block;color:var(--muted);font-size:.8rem}
+.li b.num,.set b.num{white-space:nowrap}
+.li .ic{flex:none;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:.85rem}
+.ic.bad{background:var(--bad-soft);color:var(--bad)} .ic.warn{background:var(--warn-soft);color:var(--warn)} .ic.ok{background:var(--ok-soft);color:var(--ok)}
+.li .grow{flex:1;min-width:0}
+.smart{border:1px dashed var(--acc);background:var(--acc-soft)}
+.note-box{background:var(--sunk);border-radius:var(--r);padding:12px 14px;font-size:.88rem;color:var(--muted)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:150px;border-bottom:1px solid var(--line);padding-top:8px}
+.bars div{flex:1;background:var(--ink);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+.bars div:hover{opacity:1}
+.bars div.today{background:var(--acc)}
+.axis{display:flex;justify-content:space-between;font-size:.74rem;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:4px;font-size:.85rem;min-width:0}
+.field label,.lbl{color:var(--muted);font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+input[type=text],input[type=search],input[type=number],input[type=date],input[type=tel],select,textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-width:0}
+.search{width:100%;font-size:1rem;padding:11px 12px}
+.qin{width:74px;text-align:right;padding:5px 6px;font-family:var(--mono)}
+.lotin{width:110px;padding:5px 6px;font-family:var(--mono)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{all:unset;cursor:pointer;padding:6px 11px;font-size:.84rem;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--ink-fg)}
+.seg button:focus-visible{outline:3px solid var(--acc)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 11px;font-size:.84rem;font-weight:700}
+.chip:hover{border-color:var(--ink)}
+.ticket{display:flex;flex-direction:column;gap:10px}
+.tl{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--sunk)}
+.tl small{display:block;color:var(--muted);font-size:.78rem}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qty button{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;font-weight:700}
+.qty button:hover{background:var(--sunk)}
+.qty button:focus-visible{outline:3px solid var(--acc)}
+.qty span{min-width:26px;text-align:center}
+.total{display:flex;justify-content:space-between;align-items:baseline;font-size:1.05rem;padding-top:4px}
+.total b{font-size:1.6rem}
+.methods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.methods button{cursor:pointer;border:2px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 6px;font-weight:700;font-size:.85rem}
+.methods button[aria-pressed="true"]{border-color:var(--ink);background:var(--sunk)}
+.wa-wrap{background:var(--wa-bg);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px}
+.bubble{background:var(--wa);color:var(--wa-fg);padding:8px 10px 6px;border-radius:8px 0 8px 8px;max-width:94%;align-self:flex-end;font-size:.88rem;white-space:pre-wrap;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+.bubble.in{align-self:flex-start;border-radius:0 8px 8px 8px;background:var(--surface);color:var(--fg)}
+.bubble .t{display:block;text-align:right;font-size:.68rem;opacity:.7;margin-top:2px}
+.overlay{position:fixed;inset:0;background:rgba(8,20,16,.5);display:flex;justify-content:flex-end;z-index:30}
+.overlay.center{justify-content:center;align-items:center;padding:16px}
+.drawer{background:var(--bg);width:min(580px,100%);height:100%;overflow-y:auto;padding:20px max(20px,env(safe-area-inset-right,0px)) 40px 20px;display:flex;flex-direction:column;gap:14px}
+.modal{background:var(--bg);width:min(680px,100%);max-height:92vh;overflow-y:auto;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.modal .top,.drawer .top{flex-wrap:nowrap;align-items:flex-start}
+.x{all:unset;cursor:pointer;font-size:1.4rem;line-height:1;padding:4px 8px;border-radius:6px}
+.x:focus-visible{outline:3px solid var(--acc)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:700;z-index:50;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.plan{border:2px solid var(--ink);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:10px;background:var(--surface)}
+.plan .price{font-family:var(--display);font-size:2.2rem;font-weight:700;line-height:1}
+.plan ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.demo-band{background:var(--acc-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:.84rem;font-weight:700}
+.reader{width:100%;max-width:440px;aspect-ratio:4/3;background:#0b1210;border-radius:12px;overflow:hidden;display:grid;place-items:center;color:#cfe;position:relative;margin-inline:auto}
+.reader video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.reader .aim{position:absolute;left:50%;top:50%;width:56%;aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);pointer-events:none;transition:border-color .15s}
+.reader .aim.hit{border-color:#5BD18C}
+.reader .tip{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:.8rem;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}
+.reader .ph{padding:20px;text-align:center;font-size:.9rem;opacity:.85}
+#scanres,#ticket{scroll-margin-top:80px}
+.scanok{border:2px solid var(--ok)} .scanwarn{border:2px solid var(--warn)} .scanbad{border:2px solid var(--bad)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:.92rem}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.raw{font-family:var(--mono);font-size:.75rem;background:var(--sunk);padding:6px 8px;border-radius:6px;word-break:break-all;color:var(--muted)}
+.switch{position:relative;width:46px;height:26px;flex:none;display:inline-block}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:1}
+.switch span{position:absolute;inset:0;background:var(--line);border-radius:99px;transition:background .15s}
+.switch span::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .15s}
+.switch input:checked+span{background:var(--ok)}
+.switch input:checked+span::after{transform:translateX(20px)}
+.switch input:focus-visible+span{outline:3px solid var(--acc);outline-offset:2px}
+.set{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--sunk)}
+.set:last-child{border-bottom:0}
+.set small{display:block;color:var(--muted);font-size:.82rem}
+.set .grow{flex:1;min-width:0}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.form .full{grid-column:1/-1}
+.form input,.form select,.form textarea{width:100%}
+.member{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--sunk)}
+.member:last-child{border-bottom:0}
+.av{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--ok-soft);color:var(--ok)}
+.member.off{opacity:.55}
+.perms{display:flex;flex-direction:column}
+.perms label{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--sunk);cursor:pointer}
+.perms input{width:20px;height:20px;flex:none;accent-color:var(--ink)}
+.pin{font-family:var(--mono);font-size:1.6rem;letter-spacing:.4em;text-align:center;width:180px}
+@media (max-width:760px){.form{grid-template-columns:minmax(0,1fr)}.member{flex-wrap:wrap}.member>.grow{flex:1 1 calc(100% - 56px)!important}.member>.row,.member>.btn{margin-left:52px}}
+.muted{color:var(--muted)}
+.empty{color:var(--muted);font-size:.9rem;padding:8px 0}
+.lot{font-family:var(--mono);font-size:.82rem}
+.nav button .ico{display:inline-flex;align-items:center;gap:10px}
+.nav svg,.tabbar svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.tabbar,.cartbar,.mrole{display:none}
+.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:stretch}
+.plan.cur{border-color:var(--ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 25%,transparent)}
+.plan.alt{border:1px solid var(--line)}
+.plan .tagp{align-self:flex-start;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 9px;border-radius:99px;background:var(--acc);color:#2A1D00}
+.plan .sub{color:var(--muted);font-size:.86rem}
+.plan .inst{background:var(--sunk);border-radius:8px;padding:8px 10px;font-size:.86rem}
+.plan .inst s{color:var(--muted)}
+.plan .grow{flex:1}
+.launch{background:var(--ink);color:var(--ink-fg);border-radius:var(--r);padding:12px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.launch b{font-family:var(--display);font-size:1.05rem}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:st}
+.steps li{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start;counter-increment:st}
+.steps li::before{content:counter(st);width:28px;height:28px;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-weight:700;display:grid;place-items:center}
+.steps small{display:block;color:var(--muted)}
+.recap{display:flex;flex-direction:column}
+.recap div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--sunk)}
+.recap div.t{border-bottom:0;font-weight:700;font-size:1.1rem}
+.sheet{background:var(--bg);width:100%;max-height:80vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:10px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;align-self:flex-end}
+.sheet .grab{width:40px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 6px}
+.sheet button.it{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:14px 10px;border-radius:10px;font-size:1.02rem;font-weight:700}
+.sheet button.it:hover,.sheet button.it[aria-current="page"]{background:var(--sunk)}
+.sheet button.it .pill{margin-left:auto;font-size:.75rem;padding:1px 8px;border-radius:99px;background:var(--acc);color:#2A1D00}
+.sheet svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:980px){.plans{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:980px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.grid2.eq{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  body{font-size:16px}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:sticky;top:0;height:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:calc(8px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));gap:10px;z-index:20;overflow:visible}
+  .brand{padding:0;gap:8px} .brand b{font-size:1.25rem} .brand small{display:none} .brand svg{width:26px;height:26px}
+  .role,.nav,.side .foot{display:none}
+  .mrole{display:flex;align-items:center;gap:8px;max-width:60%;cursor:pointer;background:color-mix(in srgb,var(--ink-fg) 16%,transparent);color:var(--ink-fg);border:1px solid color-mix(in srgb,var(--ink-fg) 30%,transparent);border-radius:99px;padding:4px 12px 4px 4px;font:inherit;font-size:.88rem;font-weight:700}
+  .mrole .av{width:28px;height:28px;font-size:.72rem;background:var(--ink-fg);color:var(--ink)}
+  .mrole span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  main{padding-top:16px;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));gap:16px}
+  h1{font-size:1.45rem} .top p{font-size:.9rem}
+  .tabbar{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);padding:6px max(6px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));box-shadow:0 -4px 16px rgba(0,0,0,.08)}
+  .tabbar button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:10px;font-size:.7rem;font-weight:700;color:var(--muted);position:relative;min-height:44px;justify-content:center}
+  .tabbar button[aria-current="page"]{color:var(--ink)}
+  .tabbar button:focus-visible{outline:3px solid var(--acc)}
+  .tabbar svg{width:24px;height:24px}
+  .tabbar .scan{color:var(--ink-fg)}
+  .tabbar .scan span.b{width:54px;height:54px;margin-top:-26px;border-radius:50%;background:var(--ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.25);border:4px solid var(--surface)}
+  .tabbar .scan svg{width:26px;height:26px}
+  .tabbar .scan small{color:var(--muted);font-size:.7rem}
+  .tabbar .scan[aria-current="page"] small{color:var(--ink)}
+  .tabbar .dot{position:absolute;top:2px;left:calc(50% + 6px);font-size:.66rem;min-width:18px;padding:0 5px;border-radius:99px;background:var(--acc);color:#2A1D00;text-align:center;line-height:18px}
+  .cartbar{display:flex;position:fixed;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:24;background:var(--fg);color:var(--bg);border-radius:14px;padding:10px 10px 10px 16px;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+  .cartbar b{font-size:1.1rem}
+  .cartbar .btn{background:var(--ink);color:var(--ink-fg);border-color:var(--ink)}
+  .toast{bottom:calc(140px + env(safe-area-inset-bottom,0px))}
+  .btn{min-height:44px;padding:10px 16px} .btn.sm{min-height:38px;padding:7px 12px}
+  .chip{padding:9px 13px}
+  .seg button{padding:10px 12px}
+  .qty button{width:38px;height:38px}
+  input[type=text],input[type=search],input[type=number],input[type=date],input[type=tel],select,textarea{font-size:16px;min-height:44px}
+  .qin{width:84px}
+  main .row>select,main .row>input[type=search]{flex:1 1 100%}
+  .methods{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .methods button{min-height:52px}
+  .kpi{padding:12px} .kpi b{font-size:1.15rem}
+  .drawer{padding-bottom:calc(30px + env(safe-area-inset-bottom,0px))}
+  .modal{max-height:88vh}
+  /* tableaux en fiches */
+  table.cards thead{display:none}
+  table.cards,table.cards tbody,table.cards tfoot,table.cards tr,table.cards td{display:block;width:100%}
+  table.cards tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;padding:12px 0;border-bottom:1px solid var(--line)}
+  table.cards tr:last-child{border-bottom:0}
+  table.cards td{border:0;padding:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:1px;min-width:0}
+  table.cards td::before{content:attr(data-l);color:var(--muted);font-family:var(--body);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  table.cards td[data-l=""]{grid-column:1/-1;flex-direction:row;justify-content:flex-end;align-items:center}
+  table.cards td[data-l=""]::before{display:none}
+  table.cards td[data-l=""] .row{justify-content:flex-end}
+  table.cards td:first-child{grid-column:1/-1;display:block;font-size:1rem}
+  table.cards td:first-child::before{display:none}
+  table.cards tfoot td{font-weight:700}
+  tr.click:hover td{background:none}
+}
+@media (prefers-reduced-motion:no-preference){.bars div{transition:height .3s}.toast{animation:up .2s ease-out}@keyframes up{from{transform:translate(-50%,10px);opacity:0}}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="currentColor" opacity=".16"/><path d="M12 6h6v6h6v6h-6v6h-6v-6H6v-6h6z" fill="currentColor"/></svg>
+      <div><b>Wergui SN</b><small>Stock pharmacie</small></div>
+    </div>
+    <button class="mrole" id="mrole" data-act="who" aria-label="Changer d'utilisateur"></button>
+    <div class="role">
+      <span class="lbl" style="color:inherit;opacity:.8;font-size:.7rem">Connecté</span>
+      <button class="who" id="role" data-act="who" aria-label="Changer d'utilisateur"></button>
+    </div>
+    <nav class="nav" id="nav" aria-label="Sections"></nav>
+    <div class="foot">Démo</div>
+  </aside>
+  <main id="main"></main>
+  <nav class="tabbar" id="tabbar" aria-label="Navigation"></nav>
+</div>
+<div id="layer"></div>
+<script>
+/* ---------- Données d'exemple ---------- */
+const TODAY=new Date(2026,10,1), TODAY_TXT="dimanche 1er novembre 2026";
+const FOUR={lab:{n:"Laborex",d:1,ret:true},cop:{n:"Cophase",d:1,ret:true},sod:{n:"Sodipharm",d:2,ret:false},duo:{n:"Duopharm",d:2,ret:true}};
+const CATS=["Antipaludiques","Antibiotiques","Antalgiques","Maladies chroniques","Digestif","Pédiatrie","Respiratoire","Vitamines","Parapharmacie"];
+// id | nom | présentation | catégorie | prix de vente | prix d'achat | ventes/jour | fournisseur | lots (n°:péremption:quantité)
+const RAW=`1|Paracétamol 500 mg|boîte de 16 cp|2|600|420|14|lab|P2405A:2027-08-30:120,P2311C:2026-11-20:18
+2|Doliprane 1000 mg|boîte de 8 cp|2|1250|900|9|lab|D7781:2027-03-31:64
+3|Ibuprofène 400 mg|boîte de 30 cp|2|1500|1050|5|cop|IB223:2026-12-15:22,IB301:2027-09-30:30
+4|Diclofénac 50 mg|boîte de 30 cp|2|1300|900|4|sod|DC118:2026-10-25:6,DC204:2027-05-31:18
+5|Spasfon 80 mg|boîte de 30 cp|4|2900|2050|3|lab|SP551:2027-06-30:21
+6|Coartem 20/120 mg|boîte de 24 cp|0|3500|2600|6|lab|CT9902:2027-01-31:14
+7|Artésunate 60 mg injectable|1 flacon|0|2800|2000|2|cop|AS77:2026-11-10:9,AS81:2027-04-30:6
+8|Quinine 300 mg|boîte de 20 cp|0|1800|1250|0.3|sod|QN12:2026-12-31:25
+9|Amoxicilline 500 mg|boîte de 12 gél.|1|1100|750|8|lab|AM590:2026-11-08:12,AM661:2027-02-28:40
+10|Augmentin 1 g|boîte de 8 cp|1|5600|4100|3|cop|AU33:2027-07-31:9
+11|Amoxicilline 250 mg sirop|flacon 60 ml|5|1400|950|4|lab|AS250:2026-12-05:30
+12|Ciprofloxacine 500 mg|boîte de 10 cp|1|1600|1100|2|duo|CP45:2027-10-31:16
+13|Métronidazole 250 mg|boîte de 20 cp|1|700|480|4|lab|
+14|Cotrimoxazole 480 mg|boîte de 20 cp|1|650|450|3|sod|CX19:2026-09-30:8,CX27:2027-08-31:20
+15|Ceftriaxone 1 g injectable|1 flacon|1|1500|1000|3|cop|CF70:2027-03-31:24
+16|Metformine 850 mg|boîte de 30 cp|3|1900|1350|4|lab|MF431:2027-05-31:44
+17|Glibenclamide 5 mg|boîte de 30 cp|3|1200|820|2|duo|GB12:2027-02-28:3
+18|Amlodipine 5 mg|boîte de 30 cp|3|2400|1700|5|lab|AL509:2027-04-30:38
+19|Captopril 25 mg|boîte de 30 cp|3|1100|760|2|sod|CA14:2026-11-25:16
+20|Hydrochlorothiazide 25 mg|boîte de 30 cp|3|900|620|1.5|sod|
+21|Insuline NPH 100 UI/ml|flacon 10 ml · chaîne du froid|3|6500|5000|0.5|cop|IN3:2027-01-31:6
+22|Oméprazole 20 mg|boîte de 14 gél.|4|1300|880|4|lab|OM77:2027-09-30:36
+23|Smecta|boîte de 30 sachets|4|3300|2400|2|lab|SM21:2027-03-31:14
+24|SRO (réhydratation)|1 sachet|5|150|90|15|cop|SR900:2027-12-31:200
+25|Zinc 20 mg|boîte de 10 cp|5|500|320|6|cop|ZN41:2026-12-20:120
+26|Doliprane 2,4 % sirop enfant|flacon 100 ml|5|1450|1000|5|lab|DS67:2027-04-30:26
+27|Albendazole 400 mg|1 cp|5|400|250|3|duo|AB55:2027-08-31:60
+28|Toplexil sirop|flacon 150 ml|6|2300|1650|1|sod|TX11:2026-11-28:5,TX19:2027-06-30:12
+29|Ventoline 100 µg|aérosol 200 doses|6|2900|2100|1.5|lab|VT402:2027-02-28:2
+30|Vitamine C 500 mg|boîte de 20 cp à croquer|7|800|500|2|duo|VC90:2027-01-10:160
+31|Fer + acide folique|boîte de 30 cp|7|900|600|3|cop|FA34:2027-07-31:45
+32|Lait infantile 1er âge|boîte 400 g|8|5200|4300|1|duo|LI07:2026-12-20:30
+33|Bétadine 10 %|flacon 125 ml|8|2600|1850|1.5|sod|BT22:2028-01-31:15
+34|Sérum physiologique|30 unidoses|8|1800|1250|2|lab|SPH4:2027-11-30:24
+35|Seringues 5 ml|boîte de 100|8|6000|4200|0.3|cop|SR5:2029-06-30:4
+36|Test de grossesse|1 test|8|1000|550|2|duo|TG31:2026-10-15:4,TG40:2027-10-31:20
+37|Préservatifs|boîte de 3|8|500|300|4|cop|PR18:2028-03-31:80`;
+const P=RAW.split("\n").map(r=>{const[id,nom,pres,cat,pv,pa,vj,f,lots]=r.split("|");
+  return{id:+id,nom,pres,cat:CATS[+cat],pv:+pv,pa:+pa,vj:+vj,f,lots:lots?lots.split(",").map(x=>{const[n,e,q]=x.split(":");return{n,exp:e,q:+q,prio:false}}):[]}});
+const byId=id=>P.find(p=>p.id===+id);
+
+let seed=7;const rng=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const PERMS=[["dash","Voir le tableau de bord et les chiffres du jour","Tableau de bord"],["achat","Voir les prix d'achat et les marges","Prix d'achat"],["remise","Accorder des remises en caisse","Remises"],["per","Retirer des lots périmés et préparer les retours","Retraits et retours"],["recep","Réceptionner les livraisons","Réceptions"],["cmd","Passer les commandes aux grossistes","Commandes"],["inv","Faire les inventaires","Inventaires"],["prod","Créer et modifier les produits et les prix","Produits et prix"],["fin","Voir les finances et clôturer la caisse","Finances"]];
+const ROLES={adjoint:{n:"Pharmacien adjoint",perm:["dash","achat","remise","per","recep","cmd","inv","prod","fin"]},vendeur:{n:"Vendeur",perm:["per","recep"]},stagiaire:{n:"Stagiaire",perm:[]}};
+const permOf=r=>Object.fromEntries(PERMS.map(([k])=>[k,(ROLES[r]||{perm:[]}).perm.includes(k)]));
+const S={role:"titulaire",uid:1,users:[{id:1,nom:"Dr Aïssatou Ndiaye",role:"titulaire",tel:"77 000 00 00",pin:"0000",actif:true},
+    {id:2,nom:"Fatou Sarr",role:"adjoint",tel:"78 000 00 01",pin:"2468",actif:true,perm:permOf("adjoint")},
+    {id:3,nom:"Moussa Diop",role:"vendeur",tel:"76 000 00 02",pin:"1234",actif:true,perm:permOf("vendeur")}],
+  cfg:{nom:"Pharmacie Keur Wergui",adr:"Médina, Dakar",tel:"33 800 00 00",wa:"77 000 00 00",heure:"07:30",ticket:"Merci de votre visite. Bonne santé !",
+    alertJ:90,secu:4,couv:14,recepMois:6,tp:80,pays:{"Espèces":true,"Wave":true,"Orange Money":true,"Free Money":false,"Assurance":true}},
+  setTab:"pharmacie",remise:0,view:"accueil",cart:[],pay:"Espèces",q:"",fcat:"",fst:"",perTab:"perimes",couv:14,cmdQ:{},invCat:CATS[0],inv:{},
+  sales:[],hist:Array.from({length:13},()=>Math.round((190+rng()*140)*1000)),
+  orders:[{id:"BC-0412",f:"sod",date:"31/10/2026",st:"attente",lines:[{pid:20,q:20},{pid:4,q:10},{pid:19,q:8}]}],
+  pertes:[],avoirs:[],perteOct:86400,paidUntil:"30/11/2026",invoices:[["Novembre 2026","Wave","28/10/2026"],["Octobre 2026","Orange Money","29/09/2026"],["Septembre 2026","Wave","30/08/2026"]],nextBC:413};
+
+const me=()=>S.users.find(u=>u.id===S.uid)||S.users[0];
+const isTit=()=>me().role==="titulaire";
+const can=k=>isTit()||!!(me().perm&&me().perm[k]);
+const short=u=>u.role==="titulaire"?"Dr "+u.nom.split(" ").pop():u.nom.split(" ")[0];
+const initials=u=>esc(u.nom.replace(/^Dr\s+/,"").split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase());
+const roleName=u=>u.role==="titulaire"?"Titulaire":(ROLES[u.role]||{}).n||u.role;
+const payModes=()=>Object.keys(S.cfg.pays).filter(k=>S.cfg.pays[k]);
+/* ---------- Calculs « pensés pharmacie » ---------- */
+const pd=s=>{const[a,b,c]=s.split("-").map(Number);return new Date(a,b-1,c)};
+const dj=s=>Math.round((pd(s)-TODAY)/864e5);
+const dfr=s=>{const[a,b,c]=s.split("-");return c+"/"+b+"/"+a};
+const fmt=n=>Math.round(n).toLocaleString("fr-FR")+" F";
+const nb=n=>(+n).toLocaleString("fr-FR");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const live=p=>p.lots.filter(l=>l.q>0&&dj(l.exp)>=0).sort((a,b)=>a.exp<b.exp?-1:1);   // ordre FEFO
+const dead=p=>p.lots.filter(l=>l.q>0&&dj(l.exp)<0);
+const stock=p=>live(p).reduce((s,l)=>s+l.q,0);
+const seuil=p=>p.seuilMan||Math.ceil(p.vj*(FOUR[p.f].d+S.cfg.secu));               // délai de livraison + 4 jours de sécurité
+const jours=p=>p.vj?Math.floor(stock(p)/p.vj):999;
+function etat(p){const s=stock(p);return s===0?["Rupture","bad"]:s<seuil(p)?["Sous le seuil","warn"]:["En stock","ok"]}
+function invendus(p){let c=0;return live(p).map(l=>{const cap=Math.max(0,Math.floor(p.vj*dj(l.exp))-c),sold=Math.min(l.q,cap);c+=sold;return{p,l,u:l.q-sold}}).filter(x=>x.u>0)}
+const enCommande=pid=>S.orders.filter(o=>o.st==="attente").reduce((s,o)=>s+o.lines.filter(l=>l.pid===pid).reduce((a,l)=>a+l.q,0),0);
+function sugg(p){const s=stock(p)+enCommande(p.id);if(s>=seuil(p))return 0;return Math.max(1,Math.ceil(p.vj*(FOUR[p.f].d+S.couv))-s)}
+const qCmd=p=>S.cmdQ[p.id]!=null?S.cmdQ[p.id]:sugg(p);
+const allLots=()=>P.flatMap(p=>p.lots.filter(l=>l.q>0).map(l=>({p,l,d:dj(l.exp)})));
+const perimes=()=>allLots().filter(x=>x.d<0);
+const sous=(a,b)=>allLots().filter(x=>x.d>=a&&x.d<b).sort((x,y)=>x.d-y.d);
+const valStock=()=>P.reduce((s,p)=>s+stock(p)*p.pa,0);
+const ventesJour=()=>S.sales.reduce((s,v)=>s+v.tot,0);
+const sugList=()=>P.filter(p=>sugg(p)>0);
+
+/* ventes déjà faites ce matin */
+[[8,12,[[1,2],[24,4]],"Espèces"],[8,40,[[6,1],[1,1]],"Wave"],[9,5,[[16,2],[18,1]],"Assurance"],[9,31,[[9,1],[22,1]],"Orange Money"],[9,58,[[26,1],[25,1],[24,3]],"Espèces"],[10,20,[[2,2]],"Wave"]].forEach(([h,m,it,mode])=>{
+  const items=it.map(([pid,q])=>{const p=byId(pid);sortie(p,q);return{pid,q,pv:p.pv}});const tot=items.reduce((s,i)=>s+i.q*i.pv,0);
+  S.sales.push({h:String(h).padStart(2,"0")+":"+String(m).padStart(2,"0"),items,tot,mode,par:"Moussa Diop",tp:mode==="Assurance"?80:0,org:mode==="Assurance"?"IPM Transports":""})});
+function sortie(p,q){for(const l of live(p)){const t=Math.min(l.q,q);l.q-=t;q-=t;if(!q)break}}
+
+/* ---------- Navigation ---------- */
+function navItems(){const per=perimes().length+sous(0,30).length,sg=sugList().length,rec=S.orders.filter(o=>o.st==="attente").length;
+  const all=[["accueil","Tableau de bord"],["caisse","Caisse"],["scanner","Scanner"],["stock","Stock"],["peremption","Péremptions",per],["commandes","Commandes",sg+rec],["inventaire","Inventaire"],["finances","Finances"],["abonnement","Abonnement"]];
+  all.splice(7,0,["parametres","Paramètres"]);
+  const ok={accueil:can("dash"),finances:can("fin"),commandes:can("cmd")||can("recep"),inventaire:can("inv"),parametres:isTit(),abonnement:isTit()};
+  return all.filter(i=>ok[i[0]]!==false)}
+const ICO={accueil:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+  caisse:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h4M14 13h3M7 17h4M14 17h3"/>',
+  scanner:'<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/>',
+  stock:'<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+  peremption:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>',
+  commandes:'<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
+  finances:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  inventaire:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10l2 2 4-4M9 16h6"/>',
+  parametres:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  abonnement:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  plus:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+const svg=k=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[k]}</svg>`;
+const SHORT={accueil:"Accueil",caisse:"Caisse",scanner:"Scanner",stock:"Stock",peremption:"Péremptions",commandes:"Commandes",inventaire:"Inventaire",finances:"Finances",parametres:"Paramètres",abonnement:"Abonnement"};
+function nav(){const items=navItems();if(!items.some(i=>i[0]===S.view))S.view=items[0][0];
+  document.getElementById("nav").innerHTML=items.map(([k,l,n])=>`<button data-go="${k}" ${S.view===k?'aria-current="page"':""}><span class="ico">${svg(k)}${l}</span>${n?`<span class="pill">${n}</span>`:""}</button>`).join("");
+  const main=can("dash")?["accueil","caisse","scanner","stock"]:["caisse","scanner","stock","peremption"],rest=items.filter(i=>!main.includes(i[0])),restN=rest.reduce((a,i)=>a+(i[2]||0),0),
+    tb=document.getElementById("tabbar"),btn=k=>{const it=items.find(i=>i[0]===k);return k==="scanner"?`<button class="scan" data-go="scanner" ${S.view===k?'aria-current="page"':""}><span class="b">${svg(k)}</span><small>Scanner</small></button>`:
+      `<button data-go="${k}" ${S.view===k?'aria-current="page"':""}>${svg(k)}<span>${SHORT[k]}</span>${it&&it[2]?`<span class="dot">${it[2]}</span>`:""}</button>`};
+  tb.style.setProperty("--n",main.length+(rest.length?1:0));
+  tb.innerHTML=main.map(btn).join("")+(rest.length?`<button data-act="more" ${rest.some(i=>i[0]===S.view)?'aria-current="page"':""}>${svg("plus")}<span>Plus</span>${restN?`<span class="dot">${restN}</span>`:""}</button>`:"");
+  const u=me(),ini=initials(u);
+  document.getElementById("role").innerHTML=`<span class="av">${ini}</span><span class="nm"><b>${esc(u.nom)}</b><small>${roleName(u)} · changer</small></span><span class="chev">▾</span>`;
+  document.getElementById("mrole").innerHTML=`<span class="av">${ini}</span><span>${esc(short(u))}</span>`;
+  document.querySelector(".side .foot").innerHTML=`${esc(S.cfg.nom)} (exemple)<br>Démo : rien n'est sauvegardé, envoyé ni payé.<br>Version 9`}
+function more(){const items=navItems(),main=can("dash")?["accueil","caisse","scanner","stock"]:["caisse","scanner","stock","peremption"];
+  layer(`<div class="sheet" role="dialog" aria-modal="true" aria-label="Plus"><div class="grab"></div>${items.filter(i=>!main.includes(i[0])).map(([k,l,n])=>`<button class="it" data-go="${k}" ${S.view===k?'aria-current="page"':""}>${svg(k)}${l}${n?`<span class="pill">${n}</span>`:""}</button>`).join("")}
+  <p class="muted" style="font-size:.8rem;padding:8px 10px">${esc(S.cfg.nom)} (exemple) · connecté : ${esc(me().nom)} (${roleName(me())}) · démo, rien n'est sauvegardé ni payé.</p></div>`)}
+function cards(root){(root||document).querySelectorAll(".tw table").forEach(t=>{t.classList.add("cards");const h=[...t.querySelectorAll("thead th")].map(x=>x.textContent.trim());
+  t.querySelectorAll("tbody tr,tfoot tr").forEach(tr=>{let i=0;[...tr.children].forEach(td=>{if(!td.hasAttribute("data-l"))td.setAttribute("data-l",td.colSpan>1?"":(h[i]||""));i+=td.colSpan||1})})})}
+function toast(t){document.querySelectorAll(".toast").forEach(x=>x.remove());const el=document.createElement("div");el.className="toast";el.setAttribute("role","status");el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),3400)}
+function closeLayer(){document.getElementById("layer").innerHTML=""}
+function layer(html,center){document.getElementById("layer").innerHTML=`<div class="overlay ${center?"center":""}" data-close="1">${html}</div>`;cards(document.getElementById("layer"));const f=document.querySelector("#layer .x");f&&f.focus()}
+function render(keepScroll){stopCam();nav();const y=window.scrollY;document.getElementById("main").innerHTML=V[S.view]();
+  if(S.view==="stock")fillStock();if(S.view==="caisse")fillRes();if(S.view==="inventaire")invTotals();if(S.view==="scanner")scanAfter();cards();window.scrollTo(0,keepScroll?y:0)}
+function go(v){S.view=v;S.q="";closeLayer();render()}
+const head=(t,s,right="")=>`<div class="top"><div><h1>${t}</h1><p>${s}</p></div><div class="row">${right}</div></div>`;
+const bubble=(t,h="07:30",cls="")=>`<div class="bubble ${cls}">${esc(t)}<span class="t">${h}</span></div>`;
+
+/* ---------- Vues ---------- */
+const V={};
+V.accueil=()=>{const per=perimes(),s30=sous(0,30),s90=sous(0,S.cfg.alertJ),risk=s90.reduce((s,x)=>s+x.l.q*x.p.pa,0),rup=P.filter(p=>stock(p)===0),bas=P.filter(p=>etat(p)[1]==="warn"),sg=sugList(),
+  inv=P.flatMap(invendus),invVal=inv.reduce((s,x)=>s+x.u*x.p.pa,0),pertes=S.pertes.reduce((s,x)=>s+x.v,0),av=S.avoirs.reduce((s,x)=>s+x.v,0),
+  days=[...S.hist,ventesJour()],mx=Math.max(...days),att=S.orders.filter(o=>o.st==="attente");
+  const todo=[];
+  if(per.length)todo.push(["bad","!",`Retirer ${per.length} lot${per.length>1?"s":""} périmé${per.length>1?"s":""} des rayons`,`Bloqués à la caisse · ${fmt(per.reduce((s,x)=>s+x.l.q*x.p.pa,0))} au prix d'achat`,"peremption","perimes"]);
+  if(s30.length)todo.push(["warn",s30.length,`${s30.length} lot${s30.length>1?"s":""} expire${s30.length>1?"nt":""} dans moins de 30 jours`,"Retour au grossiste ou vente en priorité","peremption","30"]);
+  if(rup.length)todo.push(["bad",rup.length,`${rup.length} produit${rup.length>1?"s":""} en rupture`,rup.map(p=>p.nom).join(", "),"commandes"]);
+  if(sg.length)todo.push(["warn",sg.length,`Commander ${sg.length} produit${sg.length>1?"s":""}`,Object.keys(FOUR).filter(f=>sg.some(p=>p.f===f)).map(f=>FOUR[f].n).join(", ")+" · quantités déjà calculées","commandes"]);
+  if(att.length)todo.push(["ok","↓",`Réceptionner ${att.length} livraison${att.length>1?"s":""}`,att.map(o=>FOUR[o.f].n+" ("+o.id+")").join(", "),"commandes"]);
+  if(inv.length)todo.push(["warn","~",`${inv.length} lot${inv.length>1?"s":""} ne ser${inv.length>1?"ont":"a"} pas vendu${inv.length>1?"s":""} à temps`,`Au rythme actuel, ${fmt(invVal)} finiront à la poubelle`,"peremption","inv"]);
+  return head("Bonjour "+esc(short(me())),`${esc(S.cfg.nom)} · ${TODAY_TXT}`,`<button class="btn pri" data-go="caisse">Nouvelle vente</button>`)+
+  `<div class="kpis">
+    <button class="kpi" data-go="caisse"><span>Ventes du jour</span><b class="num">${fmt(ventesJour())}</b><em>${S.sales.length} tickets</em></button>
+    <button class="kpi" data-go="stock"><span>Valeur du stock</span><b class="num">${fmt(valStock())}</b><em>${P.length} références · prix d'achat</em></button>
+    <button class="kpi ${per.length?"alert":""}" data-go="peremption"><span>À périmer sous ${S.cfg.alertJ} j</span><b class="num">${fmt(risk)}</b><em>${s90.length} lots · ${per.length} déjà périmés</em></button>
+    <button class="kpi" data-go="commandes"><span>Ruptures · seuil bas</span><b class="num">${rup.length} · ${bas.length}</b><em>${sg.length} produit${sg.length>1?"s":""} à commander</em></button>
+  </div>
+  <div class="grid2">
+    <section class="panel"><header><div><h2>À faire aujourd'hui</h2><p>Wergui SN regarde tout le stock chaque matin et vous dit quoi faire.</p></div></header>
+      <div class="list">${todo.map(([c,i,t,s,v,tab])=>`<div class="li"><span class="ic ${c}">${i}</span><div class="grow"><b>${t}</b><small>${esc(s)}</small></div><button class="btn sm" data-go="${v}" ${tab?`data-tab="${tab}"`:""}>Voir</button></div>`).join("")||'<p class="empty">Rien d\'urgent. Bonne journée !</p>'}</div>
+    </section>
+    <section class="panel"><header><div><h2>Résumé reçu sur WhatsApp</h2><p>Chaque matin à ${S.cfg.heure.replace(":"," h ")}, au ${esc(S.cfg.wa)}.</p></div></header>
+      <div class="wa-wrap">${bubble(resume(),S.cfg.heure,"in")}</div>
+    </section>
+  </div>
+  <div class="grid2">
+    <section class="panel"><header><div><h2>Ventes des 14 derniers jours</h2><p>Moyenne : ${fmt(days.reduce((a,b)=>a+b,0)/days.length)} par jour</p></div></header>
+      <div class="bars" role="img" aria-label="Ventes par jour">${days.map((d,i)=>`<div class="${i===13?"today":""}" style="height:${Math.max(2,d/mx*100)}%" title="${i===13?"Aujourd'hui":"J-"+(13-i)} : ${fmt(d)}"></div>`).join("")}</div>
+      <div class="axis"><span>19 oct.</span><span>Aujourd'hui (en cours)</span></div>
+    </section>
+    <section class="panel"><header><div><h2>Péremptions : ce que ça coûte</h2></div></header>
+      <div class="list">
+        <div class="li"><span>Jeté en octobre</span><b class="num" style="color:var(--bad)">${fmt(S.perteOct)}</b></div>
+        <div class="li"><span>Jeté en novembre</span><b class="num">${fmt(pertes)}</b></div>
+        <div class="li"><span>Récupéré en avoirs grossiste</span><b class="num" style="color:var(--ok)">${fmt(av)}</b></div>
+        <div class="li"><span>Encore récupérable (lots &lt; ${S.cfg.alertJ} j)</span><b class="num">${fmt(risk)}</b></div>
+      </div>
+      <p class="note-box">Un lot signalé 3 mois avant sa date peut encore être vendu en priorité ou rendu au grossiste. Un lot découvert périmé est perdu.</p>
+    </section>
+  </div>`};
+function resume(){const per=perimes(),s30=sous(0,30),rup=P.filter(p=>stock(p)===0),sg=sugList();
+  const t=S.users.find(u=>u.role==="titulaire");
+  return `Wergui SN · ${S.cfg.nom}
+Bonjour ${short(t)}. Hier : ${fmt(S.hist[12])} de ventes.
+
+⚠️ ${per.length} lot${per.length>1?"s":""} périmé${per.length>1?"s":""} à retirer
+⏳ ${s30.length} lot${s30.length>1?"s":""} expire${s30.length>1?"nt":""} sous 30 jours${s30[0]?` (dont ${s30[0].p.nom}, ${s30[0].l.q} boîtes, le ${dfr(s30[0].l.exp)})`:""}
+🚫 ${rup.length} rupture${rup.length>1?"s":""} : ${rup.map(p=>p.nom).join(", ")||"aucune"}
+🛒 ${sg.length} produit${sg.length>1?"s":""} à commander, bon de commande prêt
+
+Ouvrir l'application Wergui SN`}
+
+V.caisse=()=>{const top=[1,24,6,9,2,18,16,26];
+  return head("Caisse","Les lots qui périment en premier sortent en premier. Un lot périmé ne peut pas être vendu.",`<button class="btn" data-go="scanner" data-mode="vente">Scanner une boîte</button>`)+
+  `<div class="grid2">
+    <section class="panel">
+      <input type="search" id="cq" class="search" placeholder="Nom du médicament, ou scannez le code-barres" value="${esc(S.q)}" autocomplete="off" aria-label="Rechercher un produit">
+      <div class="chips" aria-label="Ventes fréquentes">${top.map(i=>`<button class="chip" data-add="${i}">${byId(i).nom}</button>`).join("")}</div>
+      <div class="tw"><table><thead><tr><th>Produit</th><th class="r">Stock</th><th class="r">Prix</th><th></th></tr></thead><tbody id="res"></tbody></table></div>
+    </section>
+    <section class="panel ticket" id="ticket" aria-label="Ticket en cours"><header><h2>Ticket</h2>${S.cart.length?'<button class="btn sm" data-act="vider">Vider</button>':""}</header>${ticket()}</section>
+  </div>
+  <section class="panel"><header><div><h2>Tickets du jour</h2><p>${S.sales.length} ventes · ${fmt(ventesJour())}</p></div></header>
+    <div class="tw"><table><thead><tr><th>Heure</th><th>Produits</th><th>Vendeur</th><th>Paiement</th><th class="r">Montant</th></tr></thead><tbody>
+    ${S.sales.slice().reverse().map(v=>`<tr><td class="num">${v.h}</td><td>${v.items.map(i=>i.q+" × "+(byId(i.pid)||{nom:"Produit supprimé"}).nom).join(", ")}${v.rem?` <span class="st acc">−${v.rem} %</span>`:""}</td><td>${esc(v.par||"Dr Ndiaye")}</td><td><span class="st n">${v.mode}</span></td><td class="r num">${fmt(v.tot)}</td></tr>`).join("")}
+    </tbody></table></div></section>`+(S.cart.length?`<div class="cartbar"><div><small>${S.cart.reduce((a,c)=>a+c.q,0)} article${S.cart.reduce((a,c)=>a+c.q,0)>1?"s":""}</small><br><b class="num">${fmt(net())}</b></div><button class="btn" data-act="toticket">Voir le ticket · encaisser</button></div>`:"")};
+const brut=()=>S.cart.reduce((s,c)=>s+c.q*byId(c.pid).pv,0);
+const net=()=>Math.round(brut()*(1-S.remise/100));
+function ticket(){if(!S.cart.length)return '<p class="empty">Ajoutez des produits depuis la recherche ou les ventes fréquentes.</p>';
+  if(!payModes().includes(S.pay))S.pay=payModes()[0];
+  const tot=net(),ass=S.pay==="Assurance",tp=S.cfg.tp/100;
+  return S.cart.map(c=>{const p=byId(c.pid),l=live(p)[0];return `<div class="tl"><div><b>${p.nom}</b><small>${p.pres} · lot <span class="lot">${l?l.n:"—"}</span>${l?" · exp. "+dfr(l.exp):""}</small></div>
+    <div class="qty"><button data-q="${c.pid}|-1" aria-label="Moins">−</button><span class="num">${c.q}</span><button data-q="${c.pid}|1" aria-label="Plus">+</button></div><b class="num">${fmt(c.q*p.pv)}</b></div>`}).join("")+
+  (can("remise")?`<div class="row"><span class="lbl">Remise</span><div class="seg" role="group" aria-label="Remise">${[0,5,10].map(r=>`<button data-rem="${r}" aria-pressed="${S.remise===r}">${r} %</button>`).join("")}</div>${S.remise?`<span class="muted">− ${fmt(brut()-tot)}</span>`:""}</div>`:"")+
+  `<div class="total"><span>Total</span><b class="num">${fmt(tot)}</b></div>
+   ${ass?`<div class="field"><label for="org">Organisme</label><select id="org">${FIN.orgs.map(o=>`<option ${S.org===o?"selected":""}>${o}</option>`).join("")}</select></div><div class="note-box">Tiers payant : part ${esc(S.org)} ${S.cfg.tp} % = <b class="num">${fmt(tot*tp)}</b>. Le patient paie <b class="num">${fmt(tot*(1-tp))}</b>.</div>`:""}
+   <div class="methods" role="group" aria-label="Moyen de paiement">${payModes().map(m=>`<button data-pay="${m}" aria-pressed="${S.pay===m}">${m}</button>`).join("")}</div>
+   <button class="btn pri" data-act="encaisser" style="padding:12px">Encaisser ${fmt(ass?tot*(1-tp):tot)}</button>
+   <p class="muted" style="font-size:.8rem;text-align:center">Vendeur : ${esc(me().nom)} · ticket « ${esc(S.cfg.ticket)} »</p>`}
+function fillRes(){const q=S.q.trim().toLowerCase(),el=document.getElementById("res");if(!el)return;
+  const list=(q?P.filter(p=>(p.nom+" "+p.pres).toLowerCase().includes(q)):P.slice().sort((a,b)=>b.vj-a.vj)).slice(0,8);
+  el.innerHTML=list.map(p=>{const s=stock(p),l=live(p)[0],d=dead(p).length,inCart=(S.cart.find(c=>c.pid===p.id)||{}).q||0;
+    const tags=(l&&(l.prio||dj(l.exp)<S.cfg.alertJ)?` <span class="st acc">À vendre en priorité</span>`:"")+(d?` <span class="st bad">${d} lot périmé bloqué</span>`:"");
+    return `<tr><td><b>${p.nom}</b>${tags}<small>${p.pres}${l?` · lot ${l.n}, exp. ${dfr(l.exp)}`:""}</small></td><td class="r num">${s}</td><td class="r num">${fmt(p.pv)}</td>
+    <td class="r">${s>inCart?`<button class="btn sm" data-add="${p.id}">Ajouter</button>`:`<span class="st bad">${s?"Plus de stock":"Rupture"}</span>`}</td></tr>`}).join("")||`<tr><td colspan="4" class="empty">Aucun produit pour « ${esc(S.q)} ».</td></tr>`;cards(el.closest(".tw").parentNode)}
+function addCart(pid,silent){const p=byId(pid),c=S.cart.find(x=>x.pid===p.id),q=c?c.q:0;if(q>=stock(p)){toast(stock(p)?`Plus que ${stock(p)} en stock.`:`${p.nom} : rupture de stock.`);return false}
+  c?c.q++:S.cart.push({pid:p.id,q:1});if(silent){nav();return true}render(true)}
+function encaisser(){const tot=net(),now=new Date(),h=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  const low=[];S.cart.forEach(c=>{const p=byId(c.pid);sortie(p,c.q);if(etat(p)[1]!=="ok")low.push(p.nom)});
+  S.sales.push({h,items:S.cart.map(c=>({pid:c.pid,q:c.q,pv:byId(c.pid).pv})),tot,mode:S.pay,par:me().nom,rem:S.remise,tp:S.pay==="Assurance"?S.cfg.tp:0,org:S.pay==="Assurance"?S.org:""});S.cart=[];S.remise=0;S.q="";render();
+  toast(`Vente enregistrée : ${fmt(tot)} (${S.sales[S.sales.length-1].mode}).`+(low.length?` Stock bas : ${low.join(", ")}. Ajouté aux commandes.`:""))}
+
+V.stock=()=>head("Stock",`${P.length} références dans la démo (une vraie officine en a 2 000 à 4 000). Cliquez sur un produit pour voir ses lots.`,
+  can("prod")?`<button class="btn" data-act="import">Importer (Excel)</button><button class="btn pri" data-act="newprod">Nouveau produit</button>`:"")+
+  `<section class="panel"><div class="row">
+    <input type="search" id="sq" placeholder="Rechercher" value="${esc(S.q)}" style="flex:1;min-width:180px" aria-label="Rechercher dans le stock">
+    <select id="scat" aria-label="Rayon"><option value="">Tous les rayons</option>${CATS.map(c=>`<option ${S.fcat===c?"selected":""}>${c}</option>`).join("")}</select>
+    <select id="sst" aria-label="État"><option value="">Tous les états</option>${[["bad","Rupture"],["warn","Sous le seuil"],["exp","Lot à périmer < "+S.cfg.alertJ+" j"]].map(([v,l])=>`<option value="${v}" ${S.fst===v?"selected":""}>${l}</option>`).join("")}</select>
+  </div>
+  <div class="tw"><table><thead><tr><th>Produit</th><th>Rayon</th><th class="r">Stock</th><th class="r">Jours</th><th>Prochaine péremption</th><th>État</th></tr></thead><tbody id="stb"></tbody></table></div></section>`;
+function fillStock(){const q=S.q.trim().toLowerCase(),el=document.getElementById("stb");if(!el)return;
+  const list=P.filter(p=>(!q||(p.nom+" "+p.pres).toLowerCase().includes(q))&&(!S.fcat||p.cat===S.fcat)&&(!S.fst||(S.fst==="exp"?p.lots.some(l=>l.q&&dj(l.exp)<S.cfg.alertJ):etat(p)[1]===S.fst)));
+  el.innerHTML=list.map(p=>{const[e,c]=etat(p),n=p.lots.filter(l=>l.q).sort((a,b)=>a.exp<b.exp?-1:1)[0],d=n?dj(n.exp):null;
+    return `<tr class="click" data-prod="${p.id}" tabindex="0"><td><b>${p.nom}</b><small>${p.pres}</small></td><td>${p.cat}</td><td class="r num">${stock(p)}</td><td class="r num">${stock(p)?jours(p):"—"}</td>
+    <td>${n?`<span class="num">${dfr(n.exp)}</span> ${d<0?'<span class="st bad">Périmé</span>':d<30?`<span class="st bad">${d} j</span>`:d<S.cfg.alertJ?`<span class="st warn">${d} j</span>`:""}`:"—"}</td><td><span class="st ${c}">${e}</span></td></tr>`}).join("")||'<tr><td colspan="6" class="empty">Aucun produit.</td></tr>';cards(el.closest(".tw").parentNode)}
+function fiche(id){const p=byId(id),[e,c]=etat(p),inv=invendus(p),sg=sugg(p);
+  layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="${p.nom}"><div class="top"><div><h2>${p.nom}</h2><p>${p.pres} · ${p.cat}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+    <div class="kpi"><span>Stock vendable</span><b class="num">${stock(p)}</b><em><span class="st ${c}">${e}</span> seuil : ${seuil(p)}</em></div>
+    <div class="kpi"><span>Ventes moyennes</span><b class="num">${nb(p.vj)} / jour</b><em>${stock(p)?"Tient environ "+jours(p)+" jours":"Plus rien en rayon"}</em></div>
+    <div class="kpi"><span>Prix de vente</span><b class="num">${fmt(p.pv)}</b><em>${can("achat")?`Marge ${Math.round((p.pv-p.pa)/p.pv*100)} % · achat ${fmt(p.pa)}`:""}</em></div>
+    <div class="kpi"><span>Fournisseur</span><b>${FOUR[p.f].n}</b><em>Livré en ${FOUR[p.f].d} j${enCommande(p.id)?` · ${enCommande(p.id)} en commande`:""}</em></div>
+  </div>
+  <section class="panel"><header><h3>Lots en stock</h3><p>Ordre de sortie : le plus proche de sa date d'abord</p></header>
+  <div class="tw"><table><thead><tr><th>Lot</th><th>Péremption</th><th class="r">Qté</th><th>État</th></tr></thead><tbody>
+  ${p.lots.filter(l=>l.q).sort((a,b)=>a.exp<b.exp?-1:1).map(l=>{const d=dj(l.exp),u=inv.find(x=>x.l===l);return `<tr><td class="lot">${l.n}</td><td class="num">${dfr(l.exp)}</td><td class="r num">${l.q}</td><td>${d<0?'<span class="st bad">Périmé · bloqué</span>':d<30?`<span class="st bad">Dans ${d} j</span>`:d<S.cfg.alertJ?`<span class="st warn">Dans ${d} j</span>`:'<span class="st ok">OK</span>'}${u?` <span class="st acc">${u.u} invendables</span>`:""}</td></tr>`}).join("")||'<tr><td colspan="4" class="empty">Aucun lot en stock.</td></tr>'}
+  </tbody></table></div></section>
+  ${inv.length?`<p class="note-box">Au rythme de ${nb(p.vj)} par jour, <b>${inv.reduce((s,x)=>s+x.u,0)} boîtes</b> ne seront pas vendues avant leur date. Mettez-les en avant au comptoir ou rendez-les au grossiste.</p>`:""}
+  ${can("prod")?`<div class="row"><button class="btn" data-editprod="${p.id}">Modifier le produit</button></div>`:""}
+  ${can("cmd")?`<div class="row">${sg?`<button class="btn pri" data-go="commandes">Commander ${sg} (suggestion)</button>`:'<span class="muted">Stock suffisant, pas de commande conseillée.</span>'}</div>`:""}
+  </div>`)}
+
+V.peremption=()=>{const tabs=[["perimes","Périmés",perimes()],["30","Moins de 30 jours",sous(0,30)],["90","30 à "+S.cfg.alertJ+" jours",sous(30,S.cfg.alertJ)],["inv","Invendables prévus",P.flatMap(invendus)]],cur=tabs.find(t=>t[0]===S.perTab),rows=cur[2];
+  const val=rows.reduce((s,x)=>s+(S.perTab==="inv"?x.u:x.l.q)*x.p.pa,0);
+  const intro={perimes:"Ces lots sont bloqués à la caisse. Retirez-les des rayons et mettez-les en destruction.",30:"Dernière chance : retour au grossiste ou vente en priorité au comptoir.",90:"Il est encore temps de les écouler normalement. Wergui SN les propose en premier à la caisse.",inv:"Wergui SN compare le stock de chaque lot au rythme des ventes : voici ce qui restera sur les étagères à la date de péremption si rien ne change."}[S.perTab];
+  return head("Péremptions","Chaque lot est suivi avec sa date. Les alertes partent ${S.cfg.alertJ} jours avant.")+
+  `<div class="seg" role="group" aria-label="Horizon">${tabs.map(([k,l,r])=>`<button data-per="${k}" aria-pressed="${S.perTab===k}">${l} (${r.length})</button>`).join("")}</div>
+  <section class="panel"><header><div><h2>${cur[1]}</h2><p>${intro}</p></div><b class="num">${fmt(val)}</b></header>
+  <div class="tw"><table><thead><tr><th>Produit</th><th>Lot</th><th>Péremption</th><th class="r">${S.perTab==="inv"?"Invendables":"Qté"}</th><th class="r">Valeur</th><th></th></tr></thead><tbody>
+  ${rows.map(x=>{const d=dj(x.l.exp),q=S.perTab==="inv"?x.u:x.l.q,k=x.p.id+"|"+x.l.n,ret=FOUR[x.p.f].ret;
+    return `<tr><td><b>${x.p.nom}</b><small>${x.p.pres} · ${FOUR[x.p.f].n}</small></td><td class="lot">${x.l.n}</td><td><span class="num">${dfr(x.l.exp)}</span><small>${d<0?"il y a "+(-d)+" j":"dans "+d+" j"}</small></td>
+    <td class="r num">${q}${S.perTab==="inv"?` <small>sur ${x.l.q}</small>`:""}</td><td class="r num">${fmt(q*x.p.pa)}</td>
+    <td class="r"><div class="row" style="justify-content:flex-end;gap:6px">${d<0?(can("per")?`<button class="btn sm bad" data-retire="${k}">Retirer du stock</button>`:'<span class="muted">À signaler au pharmacien</span>'):
+      (can("per")?`<button class="btn sm" data-retour="${k}" ${ret?"":`disabled title="${FOUR[x.p.f].n} ne reprend pas les produits"`}>Retour grossiste</button>`:"")+`<button class="btn sm" data-prio="${k}">${x.l.prio?"✓ En priorité":"Vendre en priorité"}</button>`}</div></td></tr>`}).join("")||'<tr><td colspan="6" class="empty">Aucun lot dans cette catégorie.</td></tr>'}
+  </tbody></table></div></section>`};
+function findLot(k){const[pid,n]=k.split("|"),p=byId(pid);return{p,l:p.lots.find(l=>l.n===n)}}
+
+V.commandes=()=>{const att=S.orders.filter(o=>o.st==="attente"),sg=sugList(),fs=Object.keys(FOUR).filter(f=>sg.some(p=>p.f===f));
+  return head("Commandes","Wergui SN calcule quoi commander à partir des ventes réelles, du stock et du délai de chaque grossiste.",
+  `<span class="lbl">Couvrir</span><div class="seg" role="group" aria-label="Couverture">${[7,14,30].map(n=>`<button data-couv="${n}" aria-pressed="${S.couv===n}">${n} jours</button>`).join("")}</div>`)+
+  (att.length?`<section class="panel"><header><div><h2>Livraisons attendues</h2><p>Saisissez les lots et dates à la réception : les alertes de péremption en dépendent.</p></div></header>
+   <div class="list">${att.map(o=>`<div class="li"><div class="grow"><b>${FOUR[o.f].n} · ${o.id}</b><small>Commandé le ${o.date} · ${o.lines.map(l=>l.q+" × "+byId(l.pid).nom).join(", ")}</small></div><button class="btn pri sm" data-recv="${o.id}">Réceptionner</button></div>`).join("")}</div></section>`:"")+
+  (!can("cmd")?"":fs.length?fs.map(f=>{const items=sg.filter(p=>p.f===f),tot=items.reduce((s,p)=>s+qCmd(p)*p.pa,0);
+    return `<section class="panel"><header><div><h2>${FOUR[f].n}</h2><p>Livré en ${FOUR[f].d} jour${FOUR[f].d>1?"s":""} · ${items.length} produit${items.length>1?"s":""}</p></div><div class="row"><b class="num">${fmt(tot)}</b><button class="btn wa" data-send="${f}">Envoyer le bon de commande</button></div></header>
+    <div class="tw"><table><thead><tr><th>Produit</th><th>Pourquoi</th><th class="r">Prix achat</th><th class="r">Quantité</th></tr></thead><tbody>
+    ${items.map(p=>`<tr><td><b>${p.nom}</b><small>${p.pres}</small></td><td><small style="color:var(--fg)">Vend ${nb(p.vj)}/jour · reste ${stock(p)}${stock(p)?` (${jours(p)} j)`:" · <b style='color:var(--bad)'>rupture</b>"}${enCommande(p.id)?` · ${enCommande(p.id)} déjà en route`:""}</small><small>Suggestion : ${sugg(p)} pour ${S.couv} jours</small></td>
+    <td class="r num">${fmt(p.pa)}</td><td class="r"><input type="number" min="0" class="qin" data-cq="${p.id}" value="${qCmd(p)}" aria-label="Quantité ${p.nom}"></td></tr>`).join("")}</tbody></table></div></section>`}).join(""):
+  `<section class="panel"><p class="empty">Tout est couvert pour ${S.couv} jours. Aucune commande à passer.</p></section>`)+
+  `<p class="note-box">Les produits qui risquent de périmer en rayon (voir « Invendables prévus ») ne sont jamais suggérés : commander moins, c'est jeter moins.</p>`};
+function bon(f){const items=sugList().filter(p=>p.f===f&&qCmd(p)>0);
+  return `Bon de commande BC-0${S.nextBC}
+${S.cfg.nom} · ${dfr("2026-11-03")}
+
+`+items.map(p=>`• ${qCmd(p)} × ${p.nom} (${p.pres})`).join("\n")+`
+
+Total estimé : ${fmt(items.reduce((s,p)=>s+qCmd(p)*p.pa,0))}
+Merci de livrer des lots à péremption longue (> 12 mois).`}
+function envoyer(f){const b=bon(f);if(!sugList().some(p=>p.f===f&&qCmd(p)>0)){toast("Toutes les quantités sont à zéro.");return}
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Bon de commande"><div class="top"><div><h2>Envoyer à ${FOUR[f].n}</h2><p>Par WhatsApp au commercial, et par e-mail en PDF.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="wa-wrap">${bubble(b,"10:42")}</div>
+  <div class="row"><button class="btn wa" data-confirm="${f}">Envoyer (démo)</button><button class="btn" data-close="1">Annuler</button></div></div>`,true)}
+function confirmer(f){const items=sugList().filter(p=>p.f===f&&qCmd(p)>0);const id="BC-0"+S.nextBC++;
+  S.orders.push({id,f,date:"01/11/2026",st:"attente",lines:items.map(p=>({pid:p.id,q:qCmd(p)}))});items.forEach(p=>delete S.cmdQ[p.id]);closeLayer();render();
+  toast(`${id} envoyé à ${FOUR[f].n} (démo). Il apparaît dans les livraisons attendues.`)}
+function recevoir(id){const o=S.orders.find(x=>x.id===id),def=f=>FOUR[f].n==="Sodipharm"?"2028-03-31":"2028-06-30";
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Réception"><div class="top"><div><h2>Réception ${o.id}</h2><p>${FOUR[o.f].n} · vérifiez les quantités, notez le n° de lot et la date de péremption de chaque produit.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="tw"><table><thead><tr><th>Produit</th><th class="r">Reçu</th><th>N° de lot</th><th>Péremption</th></tr></thead><tbody>
+  ${o.lines.map((l,i)=>{const p=byId(l.pid);return `<tr><td><b>${p.nom}</b><small>Commandé : ${l.q}</small></td><td class="r"><input type="number" min="0" class="qin" id="rq${i}" value="${l.q}" aria-label="Quantité reçue"></td>
+  <td><input type="text" class="lotin" id="rl${i}" value="${p.nom.slice(0,2).toUpperCase()}${600+i*37+o.id.length}" aria-label="Numéro de lot"></td><td><input type="date" id="re${i}" value="${i===o.lines.length-1&&o.id==="BC-0412"?"2027-02-28":def(o.f)}" aria-label="Date de péremption"></td></tr>`}).join("")}
+  </tbody></table></div>
+  <p class="note-box" id="rwarn"></p>
+  <div class="row"><button class="btn pri" data-recok="${o.id}">Valider la réception</button><button class="btn" data-close="1">Annuler</button></div></div>`,true);rwarn(o)}
+function rwarn(o){const el=document.getElementById("rwarn");if(!el)return;const c=o.lines.map((l,i)=>[byId(l.pid),document.getElementById("re"+i).value]).filter(([p,e])=>e&&dj(e)<S.cfg.recepMois*30);
+  el.innerHTML=c.length?`⚠️ Péremption courte (moins de ${S.cfg.recepMois} mois) : <b>${c.map(([p,e])=>p.nom+" ("+dfr(e)+")").join(", ")}</b>. Vous pouvez refuser ces lots ou négocier un retour.`:"Toutes les dates sont à plus de ${S.cfg.recepMois} mois. ✓"}
+function valRecep(id){const o=S.orders.find(x=>x.id===id);let n=0;
+  o.lines.forEach((l,i)=>{const q=+document.getElementById("rq"+i).value||0,lot=document.getElementById("rl"+i).value.trim()||"SANS-LOT",e=document.getElementById("re"+i).value||"2028-01-01";if(q>0){byId(l.pid).lots.push({n:lot,exp:e,q,prio:false});n+=q}});
+  o.st="reçue";const mt=o.lines.reduce((s,l,i)=>s+(+document.getElementById("rq"+i)?.value||0)*byId(l.pid).pa,0);
+  FIN.fact.push({id:"F-"+o.id.slice(3),f:o.f,date:"2026-11-01",ech:"2026-12-01",mt,paye:0,bc:o.id});
+  closeLayer();render();toast(`${n} boîtes entrées en stock. Facture de ${fmt(mt)} ajoutée aux dettes ${FOUR[o.f].n} (échéance 01/12/2026).`)}
+
+V.inventaire=()=>{const items=P.filter(p=>p.cat===S.invCat);
+  return head("Inventaire tournant","Un rayon à la fois, sur téléphone, sans fermer la pharmacie. Le stock théorique est mis à jour par la caisse.",
+  `<button class="btn" data-act="feuille">Imprimer la feuille de comptage</button>`)+
+  `<section class="panel"><div class="row"><label class="lbl" for="icat">Rayon</label><select id="icat">${CATS.map(c=>`<option ${S.invCat===c?"selected":""}>${c}</option>`).join("")}</select>
+   <span class="muted">${items.length} produits · dernier inventaire de ce rayon : ${["12/10","5/10","28/09","21/09","14/09","7/09","31/08","24/08","17/08"][CATS.indexOf(S.invCat)]}</span></div>
+  <div class="tw"><table><thead><tr><th>Produit</th><th class="r">Théorique</th><th class="r">Compté</th><th class="r">Écart</th><th class="r">Valeur</th></tr></thead><tbody>
+  ${items.map(p=>{const t=p.lots.reduce((s,l)=>s+l.q,0);return `<tr><td><b>${p.nom}</b><small>${p.pres}${dead(p).length?" · dont lots périmés à sortir":""}</small></td><td class="r num">${t}</td>
+  <td class="r"><input type="number" min="0" class="qin" data-inv="${p.id}" value="${S.inv[p.id]??""}" placeholder="${t}" aria-label="Compté ${p.nom}"></td><td class="r num" id="ie${p.id}">—</td><td class="r num" id="iv${p.id}">—</td></tr>`}).join("")}
+  </tbody><tfoot><tr><td colspan="3">Écart total du rayon</td><td class="r num" id="iet">0</td><td class="r num" id="ivt">0 F</td></tr></tfoot></table></div>
+  <div class="row"><button class="btn" data-act="toutok">Tout est conforme</button><button class="btn pri" data-act="valinv">Valider l'inventaire du rayon</button></div></section>`};
+function invTotals(){let te=0,tv=0;P.filter(p=>p.cat===S.invCat).forEach(p=>{const t=p.lots.reduce((s,l)=>s+l.q,0),v=S.inv[p.id],e=document.getElementById("ie"+p.id),vv=document.getElementById("iv"+p.id);if(!e)return;
+  if(v==null||v===""){e.textContent="—";vv.textContent="—";e.style.color="";return}const d=v-t;te+=d;tv+=d*p.pa;e.textContent=(d>0?"+":"")+d;e.style.color=d<0?"var(--bad)":d>0?"var(--ok)":"";vv.textContent=d?fmt(d*p.pa):"—"});
+  const a=document.getElementById("iet"),b=document.getElementById("ivt");if(a){a.textContent=(te>0?"+":"")+te;b.textContent=fmt(tv);b.style.color=tv<0?"var(--bad)":""}}
+function valInv(){const items=P.filter(p=>p.cat===S.invCat&&S.inv[p.id]!=null&&S.inv[p.id]!=="");if(!items.length){toast("Saisissez au moins une quantité comptée.");return}
+  let ec=0;items.forEach(p=>{const t=p.lots.reduce((s,l)=>s+l.q,0);let d=S.inv[p.id]-t;ec+=Math.abs(d);
+    if(d<0){for(const l of p.lots.slice().sort((a,b)=>a.exp<b.exp?-1:1)){const r=Math.min(l.q,-d);l.q-=r;d+=r;if(!d)break}}else if(d>0){const l=p.lots.slice().sort((a,b)=>a.exp<b.exp?1:-1)[0];if(l)l.q+=d;else p.lots.push({n:"INV-"+p.id,exp:"2027-12-31",q:d,prio:false})}
+    delete S.inv[p.id]});render();toast(`Inventaire « ${S.invCat} » validé : ${items.length} produits, ${ec} unités d'écart corrigées.`)}
+
+const PLANS=[
+  {k:"petite",n:"Petite officine",m:15000,inst:35000,sub:"Jusqu'à 1 500 références · 1 poste de caisse",feat:["Toutes les fonctions de base","Assistance WhatsApp en français et en wolof"]},
+  {k:"officine",n:"Officine",m:25000,inst:50000,sub:"Références illimitées · plusieurs postes de caisse",pop:true,feat:["Toutes les fonctions de base","Tiers payant IPM, mutuelles et CMU, avec relevés","Vendeurs illimités, droits par rôle"]}];
+S.plan="petite";S.bill="mois";
+const plan=k=>PLANS.find(x=>x.k===(k||S.plan));
+V.abonnement=()=>{const cur=plan(),an=S.bill==="an";
+  return head("Abonnement","Prix TTC, payés par Wave, Orange Money ou Free Money. Sans engagement en mensuel.")+
+  `<div class="launch"><div><b>Offre de lancement</b><br><span>Installation offerte pour les 20 premières pharmacies.</span></div><span class="st acc">Encore 14 places</span></div>
+  <section class="panel"><header><div><h2>Votre abonnement</h2><p>Formule ${cur.n} · ${an?"paiement annuel":"paiement mensuel"}</p></div><span class="st ok">Actif</span></header>
+    <div class="list"><div class="li"><span>Payé jusqu'au</span><b class="num">${S.paidUntil}</b></div>
+    <div class="li"><span>Prochain paiement</span><b class="num">${fmt(an?cur.m*10:cur.m)}${an?" / an":" / mois"}</b></div></div>
+    <button class="btn pri" data-act="payer">${an?"Payer l'année suivante":"Payer le mois suivant"}</button></section>
+  <div class="top"><div><h2>Les formules</h2><p>Incluses partout : alertes de péremption, caisse FEFO, scanner DataMatrix, commandes, inventaire, résumé WhatsApp.</p></div>
+    <div class="seg" role="group" aria-label="Facturation"><button data-bill="mois" aria-pressed="${!an}">Mensuel</button><button data-bill="an" aria-pressed="${an}">Annuel · 2 mois offerts</button></div></div>
+  <div class="plans">${PLANS.map(x=>{const isCur=x.k===S.plan;return `<section class="plan ${isCur?"cur":"alt"}">
+    ${x.pop?'<span class="tagp">La plus choisie</span>':""}<span class="lbl">${x.n}</span>
+    <div><span class="price">${nb(an?x.m*10:x.m)} F</span> <span class="muted">/ ${an?"an":"mois"}</span></div>
+    ${an?`<span class="sub">Soit ${fmt(x.m*10/12)} par mois au lieu de ${fmt(x.m)}</span>`:""}<span class="sub">${x.sub}</span>
+    <ul class="grow">${x.feat.map(f=>`<li>${f}</li>`).join("")}</ul>
+    <div class="inst">Installation : ${an?`<b style="color:var(--ok)">offerte</b> <s>${x.from?"dès ":""}${fmt(x.inst)}</s>`:`<b>${x.from?"dès ":""}${fmt(x.inst)}</b> · payable en 3 fois`}</div>
+    ${isCur?'<span class="st ok" style="align-self:flex-start">Votre formule</span>':`<button class="btn ${x.pop?"pri":""}" data-plan="${x.k}">Passer à ${x.n}</button>`}</section>`}).join("")}</div>
+  <div class="grid2 eq">
+  <section class="panel"><header><div><h2>Ce que comprend l'installation</h2><p>Payée une seule fois, au démarrage.</p></div></header>
+    <ol class="steps">
+      <li><div><b>L'inventaire complet de départ</b><small>On scanne toutes vos boîtes, rayon par rayon, avec lot et date. Les périmés sont repérés dès le premier jour.</small></div></li>
+      <li><div><b>Le paramétrage</b><small>Prix de vente, grossistes, seuils de commande, comptes des vendeurs.</small></div></li>
+      <li><div><b>La formation sur place</b><small>Caisse, réception des livraisons, alertes : toute l'équipe est formée.</small></div></li>
+      <li><div><b>Une visite de suivi la semaine suivante</b><small>Pour corriger, répondre aux questions et rassurer.</small></div></li>
+    </ol>
+    <p class="note-box">Hors Dakar, les frais de déplacement s'ajoutent. Si vous avez déjà un fichier Excel ou un ancien logiciel, on importe vos données sans frais supplémentaires.</p></section>
+  <section class="panel"><header><h2>Pourquoi ça se rembourse</h2></header>
+    <div class="list"><div class="li"><span>Produits jetés en octobre</span><b class="num" style="color:var(--bad)">${fmt(S.perteOct)}</b></div>
+    <div class="li"><span>Abonnement ${cur.n}</span><b class="num">${fmt(cur.m)} / mois</b></div>
+    <div class="li"><span>Si Wergui SN évite 1 lot jeté sur 4</span><b class="num" style="color:${S.perteOct/4-cur.m>0?"var(--ok)":"var(--warn)"}">${S.perteOct/4-cur.m>0?"+ ":""}${fmt(S.perteOct/4-cur.m)} / mois</b></div></div>
+    <p class="note-box">Sans compter les ventes perdues par rupture, et les jours d'inventaire à la main. L'inventaire de départ rembourse souvent une partie de l'installation : les lots presque périmés qu'il trouve peuvent encore être rendus au grossiste.</p></section></div>
+  <section class="panel"><header><h2>Factures</h2></header><div class="tw"><table><thead><tr><th>Période</th><th>Payé par</th><th>Le</th><th class="r">Montant</th></tr></thead><tbody>
+  ${S.invoices.map(i=>`<tr><td>${i[0]}</td><td>${i[1]}</td><td class="num">${i[2]}</td><td class="r num">${fmt(i[3]||15000)}</td></tr>`).join("")}</tbody></table></div></section>`};
+function payer(m,k){S.payM=m||S.payM||"Wave";if(k!==undefined)S.payPlan=k;const ch=S.payPlan?plan(S.payPlan):null,cur=plan(),an=S.bill==="an",x=ch||cur,amt=an?x.m*10:x.m;
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Paiement"><div class="top"><div><h2>${ch?"Passer à "+ch.n:an?"Payer l'année suivante":"Payer décembre 2026"}</h2><p>Wergui SN ${x.n} · ${an?"paiement annuel":"paiement mensuel"}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="demo-band">Démo : aucun paiement n'est effectué.</div>
+  <div class="recap"><div><span>Abonnement ${an?"décembre 2026 – novembre 2027":"décembre 2026"}</span><b class="num">${fmt(amt)}</b></div>
+    ${ch?`<div><span>Installation</span><span class="muted">déjà faite · 0 F</span></div>`:""}<div class="t"><span>À payer</span><span class="num">${fmt(amt)}</span></div></div>
+  <div class="methods" role="group" aria-label="Moyen de paiement">${["Wave","Orange Money","Free Money"].map(x=>`<button data-pm="${x}" aria-pressed="${S.payM===x}">${x}</button>`).join("")}</div>
+  <div class="field"><label for="tel">Numéro ${S.payM}</label><input type="tel" id="tel" value="77 000 00 00" inputmode="tel"></div>
+  <p class="muted">Vous recevez une demande de validation sur votre téléphone. Le reçu arrive par WhatsApp.</p>
+  <div class="row"><button class="btn pri" data-act="paye">Payer ${fmt(amt)}</button><button class="btn" data-close="1">Annuler</button></div></div>`,true)}
+
+/* ---------- Scanner : DataMatrix GS1, QR code, code-barres ---------- */
+const LIB="https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/iife/ponyfill.js",WASM="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/reader/";
+const FORMATS=["data_matrix","qr_code","ean_13","ean_8","code_128"];
+function gsChk(b){let s=0;for(let i=0;i<b.length;i++)s+=(+b[b.length-1-i])*(i%2?1:3);return(10-s%10)%10}
+P.forEach(p=>{const b="0200999"+String(p.id).padStart(6,"0");p.gtin=b+gsChk(b);p.gtins=[]}); // codes fictifs (préfixe 200 = usage interne)
+const findGtin=g=>g&&P.find(p=>p.gtin===g||p.gtins.includes(g));
+/* Base publique des médicaments (France) : code CIP13 -> [nom, forme, présentation], construite par GitHub Actions */
+const MEDURL="https://atas199899-sketch.github.io/Wergui-SN/medicaments.json";
+let MEDP=null;const loadMed=()=>MEDP||(MEDP=fetch(MEDURL).then(r=>r.ok?r.json():null).catch(()=>null));
+const cipOf=g=>g&&g.length===14&&g.startsWith("0340")?g.slice(1):null;
+S.scanMode="entree";S.scans=[];S.serials=new Set();S.cur=null;S.cam=null;
+function gs1(raw){let s=String(raw).trim().replace(/^\](d2|C1|Q3|e0)/,"").replace(/^\x1D/,"");
+  if(s.startsWith("(")){const o={};s.replace(/\((\d{2,4})\)([^(]*)/g,(m,a,v)=>{o[a]=v.trim()});return Object.keys(o).length?o:null}
+  if(!/^(00|01|02|10|11|17|21)\d/.test(s))return null;
+  const FIX={"00":18,"01":14,"02":14,"11":6,"12":6,"13":6,"15":6,"16":6,"17":6,"20":2},o={};let i=0;
+  while(i<s.length){const a2=s.substr(i,2);
+    if(FIX[a2]){o[a2]=s.substr(i+2,FIX[a2]);i+=2+FIX[a2];continue}
+    let ai=["240","241","710","711","712","713","714"].find(a=>s.startsWith(a,i))||(["10","21","22"].includes(a2)?a2:null);
+    if(!ai)break;const st=i+ai.length;let e=s.indexOf("\x1D",st);if(e<0)e=s.length;o[ai]=s.slice(st,e);i=e+1}
+  return o["01"]||o["17"]||o["10"]?o:null}
+function gsDate(v){if(!/^\d{6}$/.test(v||""))return"";const y=2000+ +v.slice(0,2),m=+v.slice(2,4);let d=+v.slice(4,6);if(!d)d=new Date(y,m,0).getDate();
+  return y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0")}
+function lire(raw,fmt){const r={raw,fmt:fmt||"",gtin:"",lot:"",exp:"",serie:""},g=gs1(raw);
+  if(g){r.kind="DataMatrix GS1";r.gtin=g["01"]||"";r.lot=g["10"]||"";r.exp=gsDate(g["17"]);r.serie=g["21"]||""}
+  else if(/^\d{8}$|^\d{12,14}$/.test(raw)){r.kind="Code-barres";r.gtin=raw.padStart(14,"0")}
+  else r.kind="Autre code";
+  r.p=findGtin(r.gtin);r.dup=!!(r.serie&&S.serials.has(r.gtin+"|"+r.serie));return r}
+function V_scanRes(){const r=S.cur,el=document.getElementById("scanres");if(!el)return;
+  if(!r){el.innerHTML=`<p class="empty">Scannez une boîte : le produit, le lot et la date s'affichent ici.</p>`;el.className="panel";return}
+  const d=r.exp?dj(r.exp):null,bad=d!=null&&d<0,warn=d!=null&&d>=0&&d<S.cfg.recepMois*30,m=S.scanMode;
+  const lotEnStock=r.p&&r.lot?r.p.lots.find(l=>l.n===r.lot&&l.q>0):null;
+  const msgs=[];
+  if(r.dup)msgs.push(["bad",`Cette boîte (n° de série ${esc(r.serie)}) a déjà été scannée. Double saisie, ou boîte suspecte (contrefaçon) : vérifiez.`]);
+  if(bad)msgs.push(["bad",`Périmé depuis ${-d} jours. ${m==="vente"?"Vente bloquée.":"Refusez ce lot ou mettez-le en destruction."}`]);
+  else if(warn)msgs.push(["warn",`Péremption courte : dans ${d} jours.${m==="entree"?" Vous pouvez refuser ce lot ou négocier un retour.":""}`]);
+  if(r.kind==="Code-barres")msgs.push(["warn","Code-barres simple : il donne le produit, mais pas le lot ni la date. Saisissez-les ci-dessous."]);
+  if(r.kind==="DataMatrix GS1"&&(!r.lot||!r.exp))msgs.push(["warn","Ce DataMatrix ne contient pas "+(!r.lot&&!r.exp?"le lot ni la date":!r.lot?"le n° de lot":"la date")+" : complétez à la main."]);
+  if(!r.p&&r.medLoading)msgs.push(["n","Recherche du nom dans la base des médicaments…"]);
+  else if(!r.p&&r.med)msgs.push(["ok",m==="entree"?"Trouvé dans la base publique des médicaments. Pas encore dans votre stock : indiquez le prix de vente, Wergui SN crée la fiche.":m==="vente"?"Trouvé dans la base des médicaments, mais pas dans votre stock : faites d'abord « Entrée en stock ».":"Trouvé dans la base publique des médicaments. Pas encore dans votre stock."]);
+  else if(!r.p&&r.medMiss)msgs.push(["warn","Code absent de la base publique française (produit importé d'un autre pays ?). Choisissez le produit, ou créez-le : Wergui SN retiendra ce code."]);
+  else if(!r.p&&r.medNoBase)msgs.push(["warn","Base des médicaments indisponible (pas d'internet ?). Choisissez le produit, ou créez-le."]);
+  else if(!r.p&&r.kind!=="Autre code"&&!r.manual)msgs.push(["warn","Code inconnu dans votre stock. Choisissez le produit, ou créez-le : Wergui SN retiendra ce code pour les prochaines fois."]);
+  if(r.kind==="Autre code")msgs.push(["warn","Ce code n'est pas un code de médicament (GS1). Choisissez le produit à la main."]);
+  el.className="panel "+(bad||r.dup?"scanbad":msgs.length?"scanwarn":"scanok");
+  const sel=`<select id="sp" aria-label="Produit"><option value="">${m==="entree"?"— Nouveau produit —":"— Choisir le produit —"}</option>${P.map(p=>`<option value="${p.id}" ${r.p===p?"selected":""}>${p.nom} · ${p.pres}</option>`).join("")}</select>`;
+  el.innerHTML=`<header><div><h2>${r.p?r.p.nom:r.med?esc(r.med[0]):r.manual?"Saisie manuelle":"Produit à identifier"}</h2><p>${r.p?r.p.pres+" · "+r.p.cat:r.med?esc(r.med[2]||r.med[1]):r.kind}${r.fmt?" · lu : "+r.fmt.replace("_"," "):""}</p></div>
+    ${r.p&&r.exp?(bad?'<span class="st bad">Périmé</span>':warn?`<span class="st warn">Dans ${d} j</span>`:'<span class="st ok">Date OK</span>'):""}</header>
+  ${msgs.map(([c,t])=>`<p class="st ${c}" style="white-space:normal;border-radius:8px;padding:8px 10px;font-size:.85rem">${t}</p>`).join("")}
+  <dl class="kv">${r.gtin?`<dt>Code produit</dt><dd class="num">${r.gtin}</dd>`:""}${r.serie?`<dt>N° de série</dt><dd class="num">${esc(r.serie)}</dd>`:""}
+    ${r.p&&m!=="entree"?`<dt>En stock</dt><dd>${stock(r.p)} boîtes${lotEnStock?` · dont ${lotEnStock.q} de ce lot`:r.lot?" · ce lot n'est pas dans votre stock":""}</dd><dt>Prix</dt><dd>${fmt(r.p.pv)}</dd>`:""}</dl>
+  ${!r.p?`<div class="field"><label for="sp">${m==="entree"?"Produit de votre stock":"Produit"}</label>${sel}</div>
+    ${m==="entree"?`<div class="row"><div class="field" style="flex:1 1 200px"><label for="snom">Nom du nouveau produit</label><input type="text" id="snom" value="${esc(r.med?r.med[0]:"")}" placeholder="ex. Paracétamol 1000 mg"></div>
+    <div class="field"><label for="spv">Prix de vente (F)</label><input type="number" id="spv" class="qin" min="0" inputmode="numeric" placeholder="0"></div></div>`:""}`:""}
+  ${m!=="vente"?`<div class="row">
+    <div class="field"><label for="slot">N° de lot</label><input type="text" id="slot" class="lotin" value="${esc(r.lot)}" style="width:140px"></div>
+    <div class="field"><label for="sexp">Péremption</label><input type="date" id="sexp" value="${r.exp}"></div>
+    ${m==="entree"?`<div class="field"><label for="sq2">Boîtes identiques</label><input type="number" id="sq2" class="qin" min="1" value="1"></div>`:""}</div>`:""}
+  <div class="row">${m==="entree"?`<button class="btn pri" data-act="scanadd" ${bad?"disabled":""}>Ajouter au stock</button>`:m==="vente"?`${r.done?'<span class="st ok">Ajouté au ticket ✓</span>':`<button class="btn pri" data-act="scansell" ${bad||r.dup||(!r.p&&r.med)?"disabled":""}>Ajouter au ticket</button>`}<button class="btn" data-go="caisse">Voir le ticket (${S.cart.reduce((a,c)=>a+c.q,0)})</button>`:`<button class="btn" data-act="scanmode" data-m="entree">Entrer en stock</button><button class="btn" data-act="scanmode" data-m="vente">Vendre</button>`}
+    <button class="btn" data-act="scannext">Boîte suivante</button></div>
+  <details><summary class="muted" style="cursor:pointer;font-size:.82rem">Contenu brut du code</summary><p class="raw">${esc(r.raw).replace(/\x1D/g,"<b>⟨GS⟩</b>")||"—"}</p></details>`}
+function V_scanList(){const el=document.getElementById("scanlist");if(!el)return;
+  el.innerHTML=S.scans.length?S.scans.slice().reverse().map(x=>`<div class="li"><div class="grow"><b>${x.nom}</b><small>${x.txt}</small></div><span class="st ${x.c}">${x.st}</span></div>`).join(""):'<p class="empty">Aucune boîte scannée pour l\'instant.</p>'}
+const SAMPLES=[
+  ["Coartem · DataMatrix complet",()=>"01"+byId(6).gtin+"17270930"+"10CT1188\x1D21"+"8K2F9QX41"],
+  ["Amoxicilline · péremption courte",()=>"01"+byId(9).gtin+"17261205"+"10AM702\x1D21"+"A77TQ0P2"],
+  ["Diclofénac · lot périmé",()=>"01"+byId(4).gtin+"17261015"+"10DC118\x1D21"+"Z1Y8C3"],
+  ["Paracétamol · code-barres simple",()=>byId(1).gtin.slice(1)],
+  ["Boîte inconnue · DataMatrix",()=>"01"+(b=>b+gsChk(b))("0200999999999")+"172805001011B42\x1D21"+"NEW0001"],
+  ["Vraie boîte française (CIP)",()=>"010340093450778617270131104LW8A\x1D21D"+Math.random().toString(36).slice(2,8).toUpperCase()],
+  ["Même Coartem scanné 2 fois",()=>"01"+byId(6).gtin+"17270930"+"10CT1188\x1D21"+"8K2F9QX41"]];
+V.scanner=()=>head("Scanner","Photographiez le DataMatrix (le petit carré à points) : produit, n° de lot et date de péremption se remplissent seuls. Fonctionne aussi avec les QR codes et les codes-barres.")+
+  `<div class="seg" role="group" aria-label="Que faire de la boîte ?">${[["entree","Entrée en stock"],["vente","Vente"],["verif","Vérifier une boîte"]].map(([k,l])=>`<button data-smode="${k}" aria-pressed="${S.scanMode===k}">${l}</button>`).join("")}</div>
+  <div class="grid2 eq">
+    <section class="panel"><header><div><h2>Caméra</h2><p id="camst">Visez le code, il est lu tout seul.</p></div></header>
+      <div class="reader" id="reader"><div class="ph">La caméra s'ouvre ici.<br>Sur ordinateur, utilisez les boîtes d'exemple.</div></div>
+      <div class="row"><button class="btn pri" data-act="camon" id="camon">Ouvrir la caméra</button><button class="btn" data-act="camoff" id="camoff" hidden>Arrêter</button>
+        <label class="btn" id="photobtn" style="cursor:pointer">Prendre une photo du code<input type="file" id="scanfile" accept="image/*" capture="environment" hidden></label>
+        <button class="btn" data-act="scanmanual">Pas de code : saisir à la main</button></div>
+      <div><p class="lbl" style="margin-bottom:6px">Essayer sans caméra : boîtes d'exemple</p><div class="chips">${SAMPLES.map((x,i)=>`<button class="chip" data-sample="${i}">${x[0]}</button>`).join("")}</div></div>
+    </section>
+    <section class="panel" id="scanres" aria-live="polite"></section>
+  </div>
+  <section class="panel"><header><div><h2>Boîtes scannées</h2><p>Pour une pharmacie qui démarre sur papier : on scanne chaque rayon, le stock se crée avec ses dates.</p></div></header><div class="list" id="scanlist"></div></section>
+  <p class="note-box">Le DataMatrix se lit sans internet et sans IA : c'est un format standard (GS1). Les noms des médicaments importés de France viennent de la base publique des médicaments (mise à jour chaque semaine). Les boîtes sans code se saisissent à la main ; dans la version complète, une IA lira la mention « LOT… EXP… » imprimée sur la boîte, avec confirmation par le vendeur.</p>`;
+function scanAfter(){V_scanRes();V_scanList();loadMed()}
+async function onCode(raw,fmt){const r=lire(raw,fmt);S.cur=r;if(S.cam)S.cam.paused=true;
+  if(navigator.vibrate)try{navigator.vibrate(60)}catch(e){}
+  const cip=!r.p&&cipOf(r.gtin);
+  if(cip){r.medLoading=true;V_scanRes();const M=await loadMed();r.medLoading=false;if(S.cur!==r)return;r.med=M&&M[cip]||null;r.medMiss=!!M&&!r.med;r.medNoBase=!M}
+  if(S.scanMode==="vente"&&r.p&&!(r.exp&&dj(r.exp)<0)&&!r.dup){if(addCart(r.p.id,true)){logScan(r,"Vendu","ok","ajouté au ticket");r.done=true;setTimeout(resumeCam,1500)}}
+  V_scanRes();const rs=document.getElementById("scanres");if(rs&&window.innerWidth<980&&!(S.scanMode==="vente"&&r.done))rs.scrollIntoView({behavior:"smooth",block:"start"})}
+function logScan(r,st,c,txt){if(r.serie)S.serials.add(r.gtin+"|"+r.serie);S.scans.push({nom:(r.p||{}).nom||"Produit",st,c,txt:(r.lot?"lot "+r.lot:"")+(r.exp?" · exp. "+dfr(r.exp):"")+(txt?" · "+txt:"")});V_scanList()}
+/* Lecteur : BarcodeDetector natif s'il lit le DataMatrix (Android), sinon ZXing-C++ en WebAssembly (iPhone, ordinateur) */
+let DET=null;
+async function detector(){if(DET)return DET;
+  if("BarcodeDetector" in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes("data_matrix")){DET=new BarcodeDetector({formats:FORMATS.filter(x=>f.includes(x))});return DET}}catch(e){}}
+  if(!window.BarcodeDetectionAPI)await new Promise((ok,ko)=>{const s=document.createElement("script");s.src=LIB;s.onload=ok;s.onerror=ko;document.head.appendChild(s)});
+  const A=window.BarcodeDetectionAPI;A.setZXingModuleOverrides({locateFile:(f,pre)=>f.endsWith(".wasm")?WASM+f:pre+f});
+  DET=new A.BarcodeDetector({formats:FORMATS});return DET}
+const fmtName=f=>({data_matrix:"DataMatrix",qr_code:"QR code",ean_13:"EAN-13",ean_8:"EAN-8",code_128:"Code 128"}[f]||f||"");
+async function camOn(){const st=document.getElementById("camst"),el=document.getElementById("reader");st.textContent="Ouverture de la caméra…";
+  try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("nocam");
+    const [det,stream]=await Promise.all([detector(),navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}})]);
+    if(S.view!=="scanner"){stream.getTracks().forEach(t=>t.stop());return}
+    el.innerHTML='<video playsinline muted autoplay></video><div class="aim" id="aim"></div><div class="tip">Le carré DataMatrix dans le cadre, à 10–15 cm, bien net</div>';
+    const v=el.querySelector("video");v.srcObject=stream;await v.play().catch(()=>{});
+    const tr=stream.getVideoTracks()[0];try{await tr.applyConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}
+    const cv=document.createElement("canvas"),cx=cv.getContext("2d",{willReadFrequently:true});
+    const cam={stream,v,paused:false,busy:false,n:0,timer:0};S.cam=cam;
+    const tick=async()=>{if(S.cam!==cam)return;
+      if(!cam.paused&&!cam.busy&&v.readyState>=2&&v.videoWidth){cam.busy=true;cam.n++;
+        try{const W=v.videoWidth,H=v.videoHeight;let sx=0,sy=0,sw=W,sh=H;
+          if(cam.n%2){const z=Math.round(Math.min(W,H)*.62);sx=(W-z)>>1;sy=(H-z)>>1;sw=sh=z}  // une image sur deux : le centre seulement
+          cv.width=sw;cv.height=sh;cx.drawImage(v,sx,sy,sw,sh,0,0,sw,sh);
+          const r=await det.detect(cv);if(r&&r.length&&S.cam===cam&&!cam.paused){const a=document.getElementById("aim");a&&a.classList.add("hit");setTimeout(()=>a&&a.classList.remove("hit"),600);onCode(r[0].rawValue,fmtName(r[0].format))}}
+        catch(e){}cam.busy=false}
+      cam.timer=setTimeout(tick,120)};
+    tick();
+    st.textContent="Visez le code : il est lu tout seul.";document.getElementById("camon").hidden=true;document.getElementById("camoff").hidden=false}
+  catch(e){stopCam();const camErr=e&&(e.name==="NotAllowedError"||e.name==="NotFoundError"||e.name==="NotReadableError"||e.name==="SecurityError"||e.message==="nocam");
+    if(el)el.innerHTML='<div class="ph">'+(camErr?"Touchez « Prendre une photo du code » ci-dessous,<br>puis photographiez le DataMatrix de près.":"Lecteur indisponible.")+'</div>';
+    st.textContent=camErr?"La caméra en direct est bloquée sur cette page (c'est le cas dans claude.ai, ou si l'accès a été refusé). Utilisez « Prendre une photo du code ».":"Le lecteur n'a pas pu se charger (pas d'internet ?). Utilisez les boîtes d'exemple.";
+    const pb=document.getElementById("photobtn");if(pb&&camErr){pb.classList.add("pri");document.getElementById("camon").classList.remove("pri")}}}
+function stopCam(){const c=S.cam;S.cam=null;if(c){clearTimeout(c.timer);try{c.stream.getTracks().forEach(t=>t.stop())}catch(e){}}}
+async function scanPhoto(file){const st=document.getElementById("camst");st.textContent="Lecture de la photo…";
+  try{const det=await detector();let img;try{img=await createImageBitmap(file)}catch(e){img=await new Promise((ok,ko)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ko;i.src=URL.createObjectURL(file)})}
+    let r=await det.detect(img);
+    if(!r.length){const W=img.width,H=img.height,z=Math.round(Math.min(W,H)*.6),cv=document.createElement("canvas");cv.width=cv.height=z;cv.getContext("2d").drawImage(img,(W-z)>>1,(H-z)>>1,z,z,0,0,z,z);r=await det.detect(cv)}
+    if(!r.length){st.textContent="Aucun code lu sur cette photo. Rapprochez-vous (10–15 cm), avec une bonne lumière et le code bien net.";return}
+    st.textContent="Code lu sur la photo.";onCode(r[0].rawValue,fmtName(r[0].format))}
+  catch(e){st.textContent="Le lecteur n'a pas pu se charger (pas d'internet ?)."}}
+function scanAdd(){const r=S.cur,pid=r.p?r.p.id:+(document.getElementById("sp")||{}).value;let p=pid&&byId(pid),created="";
+  const lot0=document.getElementById("slot").value.trim(),exp0=document.getElementById("sexp").value;
+  if(!p){const nom=((document.getElementById("snom")||{}).value||"").trim(),pv=parseInt((document.getElementById("spv")||{}).value)||0;
+    if(!nom){toast("Choisissez le produit, ou indiquez le nom du nouveau produit.");return}
+    if(!pv){toast("Indiquez le prix de vente.");document.getElementById("spv").focus();return}
+    if(!lot0||!exp0){toast("Indiquez le n° de lot et la date de péremption.");return}
+    if(!CATS.includes("Autres"))CATS.push("Autres");
+    p={id:Math.max(...P.map(x=>x.id))+1,nom,pres:r.med?r.med[2]:"",cat:"Autres",pv,pa:Math.round(pv/1.3),vj:.5,f:"lab",lots:[],gtin:r.gtin||"",gtins:[]};P.push(p);created=" Fiche produit créée."}
+  const lot=document.getElementById("slot").value.trim(),exp=document.getElementById("sexp").value,q=Math.max(1,parseInt(document.getElementById("sq2").value)||1);
+  if(!lot||!exp){toast("Indiquez le n° de lot et la date de péremption.");return}
+  if(dj(exp)<0){toast("Lot périmé : il ne peut pas entrer en stock.");return}
+  let learned="";if(!r.p&&r.gtin&&!findGtin(r.gtin)){p.gtins.push(r.gtin);learned=" Code retenu pour ce produit."}
+  const l=p.lots.find(x=>x.n===lot&&x.exp===exp);l?l.q+=q:p.lots.push({n:lot,exp,q,prio:false});r.p=p;
+  logScan(r,"+"+q+" en stock","ok","");S.cur=null;nav();V_scanRes();resumeCam();toast(`${q} × ${p.nom} (lot ${lot}, exp. ${dfr(exp)}) ajouté au stock.${created||learned}`)}
+function scanSell(){const r=S.cur,pid=r.p?r.p.id:+(document.getElementById("sp")||{}).value,p=pid&&byId(pid);if(!p){toast("Choisissez d'abord le produit.");return}
+  if(!r.p&&r.gtin&&!findGtin(r.gtin))p.gtins.push(r.gtin);r.p=p;
+  if(addCart(p.id,true)){logScan(r,"Vendu","ok","ajouté au ticket");toast(`${p.nom} ajouté au ticket.`);S.cur=null;V_scanRes();resumeCam()}}
+function resumeCam(){if(S.cam)S.cam.paused=false}
+
+
+
+/* ---------- Finances ---------- */
+const FIN={orgs:["IPM Transports","IPM Industries","Mutuelle des enseignants","CMU"],
+  caisse:{ouverte:true,fond:25000,par:"Moussa Diop",heure:"08:00"},
+  hist:[["31/10/2026",312400,312400,"Moussa Diop"],["30/10/2026",287900,285400,"Moussa Diop"],["29/10/2026",301250,301250,"Fatou Sarr"],["28/10/2026",276800,277300,"Moussa Diop"],["27/10/2026",265100,265100,"Fatou Sarr"]],
+  bord:[{id:"B-IPMT-09",org:"IPM Transports",mois:"Septembre 2026",mt:412600,env:"2026-10-05",paye:0},
+    {id:"B-IPMT-10",org:"IPM Transports",mois:"Octobre 2026",mt:398200,env:"",paye:0},
+    {id:"B-IPMI-08",org:"IPM Industries",mois:"Août 2026",mt:186400,env:"2026-09-04",paye:120000},
+    {id:"B-IPMI-10",org:"IPM Industries",mois:"Octobre 2026",mt:204900,env:"",paye:0},
+    {id:"B-MUT-09",org:"Mutuelle des enseignants",mois:"Septembre 2026",mt:96300,env:"2026-10-03",paye:96300},
+    {id:"B-MUT-10",org:"Mutuelle des enseignants",mois:"Octobre 2026",mt:88700,env:"",paye:0},
+    {id:"B-CMU-07",org:"CMU",mois:"Juillet 2026",mt:154800,env:"2026-08-06",paye:0},
+    {id:"B-CMU-10",org:"CMU",mois:"Octobre 2026",mt:131500,env:"",paye:0}],
+  fact:[{id:"LX-88412",f:"lab",date:"2026-10-02",ech:"2026-11-01",mt:1284500,paye:0},{id:"LX-88977",f:"lab",date:"2026-10-16",ech:"2026-11-15",mt:942300,paye:0},
+    {id:"CP-20431",f:"cop",date:"2026-10-09",ech:"2026-11-08",mt:615800,paye:300000},{id:"SD-7781",f:"sod",date:"2026-09-28",ech:"2026-10-28",mt:388900,paye:0},
+    {id:"SD-7802",f:"sod",date:"2026-10-31",ech:"2026-11-30",mt:142600,paye:0},{id:"DP-5520",f:"duo",date:"2026-10-12",ech:"2026-11-11",mt:276400,paye:276400}],
+  dep:[{d:"2026-11-01",lib:"Achat sachets et rouleaux de caisse",cat:"Fournitures",mt:6500,mode:"Espèces caisse"},
+    {d:"2026-10-31",lib:"Salaires octobre (3 personnes)",cat:"Salaires",mt:620000,mode:"Banque"},{d:"2026-10-30",lib:"Gardiennage octobre",cat:"Gardiennage",mt:60000,mode:"Wave"},
+    {d:"2026-10-28",lib:"Facture Senelec",cat:"Électricité et eau",mt:84300,mode:"Wave"},{d:"2026-10-05",lib:"Loyer octobre",cat:"Loyer",mt:350000,mode:"Banque"}],
+  rappro:{Wave:false,"Orange Money":false,"Free Money":false},
+  oct:{ventes:7384500,achats:5231200,pertes:86400,dep:1272600}};
+S.finTab="caisse";S.org=FIN.orgs[0];
+const DEPCATS=["Loyer","Salaires","Électricité et eau","Gardiennage","Transport","Fournitures","Impôts et taxes","Autre"];
+const ventesMode=m=>S.sales.filter(v=>v.mode===m).reduce((s,v)=>s+v.tot,0);
+const partPatient=()=>S.sales.filter(v=>v.mode==="Assurance").reduce((s,v)=>s+v.tot*(1-v.tp/100),0);
+const partAssur=()=>S.sales.filter(v=>v.mode==="Assurance").reduce((s,v)=>s+v.tot*v.tp/100,0);
+const depCaisseJour=()=>FIN.dep.filter(x=>x.d==="2026-11-01"&&x.mode==="Espèces caisse").reduce((s,x)=>s+x.mt,0);
+const especesAttendues=()=>Math.round(FIN.caisse.fond+ventesMode("Espèces")+partPatient()-depCaisseJour());
+const bordDu=b=>b.mt-b.paye;
+const ageJ=d=>d?-dj(d):0;
+const avoirsDe=f=>S.avoirs.filter(a=>a.p.f===f).reduce((s,a)=>s+a.v,0);
+const resteFact=x=>x.mt-x.paye;
+V.finances=()=>{const T=[["caisse","Caisse du jour"],["assur","Assurances"],["gross","Grossistes"],["dep","Dépenses"],["res","Résultat"]];
+  const cre=FIN.bord.reduce((s,b)=>s+bordDu(b),0)+partAssur(),det=FIN.fact.reduce((s,x)=>s+resteFact(x),0)-Object.keys(FOUR).reduce((s,f)=>s+avoirsDe(f),0);
+  return head("Finances","Caisse, créances des assurances, dettes grossistes, dépenses et résultat. Pour la comptabilité officielle, un export prêt pour votre comptable.",
+   `<button class="btn" data-act="export">Exporter pour le comptable</button>`)+
+  `<div class="kpis">
+    <button class="kpi" data-ftab="caisse"><span>Caisse ${FIN.caisse.ouverte?"ouverte":"clôturée"}</span><b class="num">${fmt(especesAttendues())}</b><em>espèces attendues</em></button>
+    <button class="kpi" data-ftab="assur"><span>Les assurances vous doivent</span><b class="num">${fmt(cre)}</b><em>${(n=>n+(n>1?" bordereaux":" bordereau")+" en retard")(FIN.bord.filter(b=>bordDu(b)&&b.env&&ageJ(b.env)>60).length)}</em></button>
+    <button class="kpi" data-ftab="gross"><span>Vous devez aux grossistes</span><b class="num">${fmt(det)}</b><em>${(n=>n+(n>1?" factures échues":" facture échue"))(FIN.fact.filter(x=>resteFact(x)&&dj(x.ech)<0).length)}</em></button>
+    <button class="kpi" data-ftab="res"><span>Résultat d'octobre</span><b class="num">${fmt(resOct().res)}</b><em>après achats, pertes et dépenses</em></button>
+  </div>
+  <div class="seg" role="group" aria-label="Rubrique">${T.map(([k,l])=>`<button data-ftab="${k}" aria-pressed="${S.finTab===k}">${l}</button>`).join("")}</div>`+FV[S.finTab]()};
+const FV={};
+FV.caisse=()=>{const c=FIN.caisse,att=especesAttendues(),modes=["Wave","Orange Money","Free Money"].filter(m=>ventesMode(m)||S.cfg.pays[m]);
+  const parV={};S.sales.forEach(v=>{parV[v.par]=parV[v.par]||{n:0,t:0,e:0};parV[v.par].n++;parV[v.par].t+=v.tot;if(v.mode==="Espèces")parV[v.par].e+=v.tot;if(v.mode==="Assurance")parV[v.par].e+=v.tot*(1-v.tp/100)});
+  return `<div class="grid2">
+  <section class="panel"><header><div><h2>Caisse du ${dfr("2026-11-01")}</h2><p>${c.ouverte?`Ouverte à ${c.heure} par ${esc(c.par)} · fond de caisse ${fmt(c.fond)}`:"Caisse clôturée"}</p></div><span class="st ${c.ouverte?"ok":"n"}">${c.ouverte?"Ouverte":"Clôturée"}</span></header>
+    <div class="list">
+      <div class="li"><span>Fond de caisse</span><b class="num">${fmt(c.fond)}</b></div>
+      <div class="li"><span>Ventes en espèces</span><b class="num">+ ${fmt(ventesMode("Espèces"))}</b></div>
+      <div class="li"><span>Part patient des ventes assurance</span><b class="num">+ ${fmt(partPatient())}</b></div>
+      <div class="li"><span>Dépenses payées en espèces</span><b class="num">− ${fmt(depCaisseJour())}</b></div>
+      <div class="li"><b>Espèces attendues dans le tiroir</b><b class="num">${fmt(att)}</b></div>
+    </div>
+    ${c.ouverte?`<div class="row"><div class="field"><label for="compte">Espèces comptées</label><input type="number" id="compte" class="qin" style="width:150px" inputmode="numeric" placeholder="${att}"></div><span id="ecart" class="muted">Comptez le tiroir puis saisissez le montant.</span></div>
+    <div class="row"><button class="btn pri" data-act="cloture">Clôturer la caisse</button></div>`:
+    `<div class="row"><div class="field"><label for="fond">Fond de caisse</label><input type="number" id="fond" class="qin" style="width:150px" value="25000" inputmode="numeric"></div><button class="btn pri" data-act="ouvrir">Ouvrir la caisse</button></div>`}
+  </section>
+  <section class="panel"><header><div><h2>Mobile Money</h2><p>À comparer avec les relevés de vos comptes marchands.</p></div></header>
+    <div>${modes.map(m=>`<div class="set"><div class="grow"><b>${m}</b><small>${(n=>n+(n>1?" paiements":" paiement"))(S.sales.filter(v=>v.mode===m).length)} aujourd'hui</small></div><b class="num">${fmt(ventesMode(m))}</b><label class="row" style="gap:6px;flex-wrap:nowrap"><input type="checkbox" data-rappro="${m}" ${FIN.rappro[m]?"checked":""} style="width:20px;height:20px;accent-color:var(--ink)"><span class="muted">vérifié</span></label></div>`).join("")}
+    <div class="set"><div class="grow"><b>Assurances</b><small>part prise en charge, à réclamer</small></div><b class="num">${fmt(partAssur())}</b></div></div>
+  </section></div>
+  <section class="panel"><header><div><h2>Par vendeur aujourd'hui</h2><p>Chaque vente est enregistrée au nom de la personne connectée.</p></div></header>
+    <div class="tw"><table><thead><tr><th>Vendeur</th><th class="r">Tickets</th><th class="r">Ventes</th><th class="r">Dont espèces</th></tr></thead><tbody>
+    ${Object.entries(parV).map(([n,x])=>`<tr><td><b>${esc(n)}</b></td><td class="r num">${x.n}</td><td class="r num">${fmt(x.t)}</td><td class="r num">${fmt(x.e)}</td></tr>`).join("")}</tbody></table></div></section>
+  <section class="panel"><header><div><h2>Clôtures précédentes</h2><p>Un écart qui revient souvent avec le même vendeur mérite une discussion.</p></div></header>
+    <div class="tw"><table><thead><tr><th>Jour</th><th>Clôturé par</th><th class="r">Attendu</th><th class="r">Compté</th><th class="r">Écart</th></tr></thead><tbody>
+    ${FIN.hist.map(([d,a,c,p])=>{const e=c-a;return `<tr><td class="num">${d}</td><td>${esc(p)}</td><td class="r num">${fmt(a)}</td><td class="r num">${fmt(c)}</td><td class="r"><span class="st ${e<0?"bad":e>0?"warn":"ok"}">${e?(e>0?"+ ":"− ")+fmt(Math.abs(e)):"Juste"}</span></td></tr>`}).join("")}</tbody></table></div></section>`};
+FV.assur=()=>{const orgs=FIN.orgs.map(o=>{const bs=FIN.bord.filter(b=>b.org===o),jour=S.sales.filter(v=>v.mode==="Assurance"&&v.org===o).reduce((s,v)=>s+v.tot*v.tp/100,0);return{o,bs,jour,du:bs.reduce((s,b)=>s+bordDu(b),0)+jour}});
+  return `<p class="note-box">Chaque vente au tiers payant s'ajoute au bordereau du mois de l'organisme. En fin de mois, Wergui SN prépare le bordereau à envoyer. Vous suivez ensuite les paiements et les retards.</p>`+
+  orgs.map(({o,bs,jour,du})=>`<section class="panel"><header><div><h2>${esc(o)}</h2><p>${jour?`Novembre en cours : ${fmt(jour)} · `:""}${bs.filter(b=>bordDu(b)).length} bordereau${bs.filter(b=>bordDu(b)).length>1?"x":""} à encaisser</p></div><b class="num">${fmt(du)}</b></header>
+    <div class="tw"><table><thead><tr><th>Bordereau</th><th>Mois</th><th>Statut</th><th class="r">Montant</th><th class="r">Reste dû</th><th></th></tr></thead><tbody>
+    ${bs.map(b=>{const r=bordDu(b),a=ageJ(b.env),st=!r?'<span class="st ok">Payé</span>':!b.env?'<span class="st n">À envoyer</span>':a>60?`<span class="st bad">En retard · ${a} j</span>`:`<span class="st warn">Envoyé il y a ${a} j</span>`;
+      return `<tr><td class="lot">${b.id}</td><td>${b.mois}</td><td>${st}${b.paye&&r?` <small>déjà reçu ${fmt(b.paye)}</small>`:""}</td><td class="r num">${fmt(b.mt)}</td><td class="r num">${fmt(r)}</td>
+      <td class="r"><div class="row" style="justify-content:flex-end;gap:6px">${!r?"":!b.env?`<button class="btn sm pri" data-bsend="${b.id}">Envoyer le bordereau</button>`:`${a>45?`<button class="btn sm" data-brel="${b.id}">Relancer</button>`:""}<button class="btn sm" data-bpay="${b.id}">Paiement reçu</button>`}</div></td></tr>`}).join("")}</tbody></table></div></section>`).join("")};
+FV.gross=()=>Object.entries(FOUR).map(([k,f])=>{const fs=FIN.fact.filter(x=>x.f===k),av=avoirsDe(k),du=fs.reduce((s,x)=>s+resteFact(x),0);if(!fs.length&&!av)return"";
+  return `<section class="panel"><header><div><h2>${esc(f.n)}</h2><p>${fs.filter(x=>resteFact(x)).length} facture${fs.filter(x=>resteFact(x)).length>1?"s":""} à payer${av?` · avoir de retours ${fmt(av)} à déduire`:""}</p></div><b class="num">${fmt(du-av)}</b></header>
+  <div class="tw"><table><thead><tr><th>Facture</th><th>Reçue le</th><th>Échéance</th><th class="r">Montant</th><th class="r">Reste</th><th></th></tr></thead><tbody>
+  ${fs.map(x=>{const r=resteFact(x),d=dj(x.ech);return `<tr><td class="lot">${x.id}${x.bc?` <small>${x.bc}</small>`:""}</td><td class="num">${dfr(x.date)}</td><td>${!r?'<span class="st ok">Payée</span>':d<0?`<span class="st bad">Échue depuis ${-d} j</span>`:d<=7?`<span class="st warn">Dans ${d} j</span>`:`<span class="num">${dfr(x.ech)}</span>`}</td>
+  <td class="r num">${fmt(x.mt)}</td><td class="r num">${fmt(r)}</td><td class="r">${r?`<button class="btn sm" data-fpay="${x.id}">Payer</button>`:""}</td></tr>`}).join("")}</tbody></table></div></section>`}).join("")||'<section class="panel"><p class="empty">Aucune facture.</p></section>';
+FV.dep=()=>`<section class="panel"><header><div><h2>Ajouter une dépense</h2><p>Une dépense payée en espèces est retirée de la caisse du jour.</p></div></header>
+  <div class="form"><div class="field full"><label for="dlib">Libellé</label><input type="text" id="dlib" placeholder="ex. Facture Senelec, transport livraison…"></div>
+  <div class="field"><label for="dcat">Catégorie</label><select id="dcat">${DEPCATS.map(c=>`<option>${c}</option>`).join("")}</select></div>
+  <div class="field"><label for="dmt">Montant (F)</label><input type="number" id="dmt" inputmode="numeric" min="0"></div>
+  <div class="field full"><label for="dmode">Payé par</label><select id="dmode">${["Espèces caisse","Wave","Orange Money","Banque","Chèque"].map(m=>`<option>${m}</option>`).join("")}</select></div></div>
+  <div class="row"><button class="btn pri" data-act="adddep">Ajouter</button></div></section>
+  <section class="panel"><header><div><h2>Dépenses récentes</h2><p>Novembre : ${fmt(FIN.dep.filter(x=>x.d>="2026-11-01").reduce((s,x)=>s+x.mt,0))} · octobre : ${fmt(FIN.dep.filter(x=>x.d<"2026-11-01"&&x.d>="2026-10-01").reduce((s,x)=>s+x.mt,0))} (saisi)</p></div></header>
+  <div class="tw"><table><thead><tr><th>Dépense</th><th>Date</th><th>Catégorie</th><th>Payé par</th><th class="r">Montant</th></tr></thead><tbody>
+  ${FIN.dep.slice().sort((a,b)=>a.d<b.d?1:-1).map(x=>`<tr><td><b>${esc(x.lib)}</b></td><td class="num">${dfr(x.d)}</td><td>${esc(x.cat)}</td><td>${esc(x.mode)}</td><td class="r num">${fmt(x.mt)}</td></tr>`).join("")}</tbody></table></div></section>`;
+function resOct(){const o=FIN.oct,mb=o.ventes-o.achats;return{...o,mb,res:mb-o.pertes-o.dep}}
+function resNov(){const ventes=ventesJour(),achats=S.sales.reduce((s,v)=>s+v.items.reduce((a,i)=>a+i.q*((byId(i.pid)||{pa:i.pv/1.3}).pa),0),0),pertes=S.pertes.reduce((s,x)=>s+x.v,0),dep=FIN.dep.filter(x=>x.d>="2026-11-01").reduce((s,x)=>s+x.mt,0),mb=ventes-achats;return{ventes,achats,pertes,dep,mb,res:mb-pertes-dep}}
+FV.res=()=>{const o=resOct(),n=resNov(),row=(l,a,b,cls="",neg)=>`<tr${cls?` class="${cls}"`:""}><td>${l}</td><td class="r num">${neg?"− ":""}${fmt(a)}</td><td class="r num">${neg?"− ":""}${fmt(b)}</td></tr>`;
+  return `<section class="panel"><header><div><h2>Résultat simplifié</h2><p>Ce que la pharmacie a vraiment gagné. Calculé à partir des ventes, des prix d'achat, des pertes et des dépenses saisies.</p></div></header>
+  <div class="tw"><table><thead><tr><th>Poste</th><th class="r">Octobre 2026</th><th class="r">Novembre (en cours)</th></tr></thead><tbody>
+  ${row("Ventes",o.ventes,n.ventes)}${row("Coût d'achat des produits vendus",o.achats,n.achats,"",1)}
+  <tr><td><b>Marge brute</b> <small>${Math.round(o.mb/o.ventes*100)} % des ventes en octobre</small></td><td class="r num"><b>${fmt(o.mb)}</b></td><td class="r num"><b>${fmt(n.mb)}</b></td></tr>
+  ${row("Produits jetés (péremption)",o.pertes,n.pertes,"",1)}${row("Dépenses",o.dep,n.dep,"",1)}
+  </tbody><tfoot><tr><td>Résultat</td><td class="r num" style="color:${o.res>=0?"var(--ok)":"var(--bad)"}">${fmt(o.res)}</td><td class="r num">${fmt(n.res)}</td></tr></tfoot></table></div>
+  <p class="note-box">C'est un résultat de gestion, pas le résultat comptable officiel : amortissements, impôts et charges sociales sont faits par votre comptable. L'export lui donne les ventes, les achats, les dépenses et les créances du mois.</p></section>`};
+let DL=null;try{window.claude&&typeof window.claude.use==="function"&&window.claude.use("downloads").then(d=>{DL=d}).catch(()=>{})}catch(e){}
+function exportCompta(){const L=[["Type","Date","Pièce","Libellé","Tiers","Mode","Montant (F)"]];
+  S.sales.forEach((v,i)=>L.push(["Vente","01/11/2026","T"+String(i+1).padStart(4,"0"),v.items.map(x=>x.q+" x "+((byId(x.pid)||{}).nom||"")).join(" + "),v.org||"Client comptoir",v.mode,v.tot]));
+  FIN.fact.forEach(x=>L.push(["Achat",dfr(x.date),x.id,"Facture grossiste",FOUR[x.f]?FOUR[x.f].n:x.f,x.paye>=x.mt?"Payée":"À payer",x.mt]));
+  FIN.dep.forEach(x=>L.push(["Dépense",dfr(x.d),"",x.lib,x.cat,x.mode,x.mt]));
+  FIN.bord.forEach(b=>L.push(["Créance assurance","",b.id,"Bordereau "+b.mois,b.org,b.paye>=b.mt?"Payé":"À encaisser",b.mt]));
+  const csv="﻿"+L.map(r=>r.map(c=>{c=String(c);return /[;"\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c}).join(";")).join("\r\n");
+  const fn="wergui-sn-comptable-2026-11.csv";
+  if(DL){DL.save({filename:fn,data:csv}).then(()=>toast("Fichier pour le comptable enregistré (ouvrable dans Excel).")).catch(e=>toast(e&&e.code==="declined"?"Téléchargement annulé.":"Téléchargement indisponible sur cette page."));return}
+  try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="wergui-sn-comptable-2026-11.csv";document.body.appendChild(a);a.click();a.remove();
+    toast("Fichier pour le comptable téléchargé (ouvrable dans Excel). La version complète l'envoie aussi par e-mail chaque mois.")}catch(e){toast("Téléchargement impossible sur cette page.")}}
+function payModal(kind,id){const x=kind==="f"?FIN.fact.find(z=>z.id===id):FIN.bord.find(z=>z.id===id),reste=kind==="f"?resteFact(x):bordDu(x),av=kind==="f"?avoirsDe(x.f):0;
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Paiement"><div class="top"><div><h2>${kind==="f"?"Payer "+x.id:"Paiement reçu · "+x.id}</h2><p>${kind==="f"?esc(FOUR[x.f].n):esc(x.org)+" · "+x.mois} · reste ${fmt(reste)}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="form"><div class="field"><label for="pmt">Montant</label><input type="number" id="pmt" inputmode="numeric" value="${Math.max(0,reste-(av&&kind==="f"?Math.min(av,reste):0))}"></div>
+  <div class="field"><label for="pmode">${kind==="f"?"Payé par":"Reçu par"}</label><select id="pmode">${["Virement","Chèque","Wave","Orange Money","Espèces"].map(m=>`<option>${m}</option>`).join("")}</select></div></div>
+  ${kind==="f"&&av?`<p class="note-box">Un avoir de ${fmt(av)} (retours de produits) peut être déduit : le montant proposé en tient compte.</p>`:""}
+  <div class="row"><button class="btn pri" data-payok="${kind}|${x.id}">Enregistrer</button><button class="btn" data-close="1">Annuler</button></div></div>`,true)}
+
+/* ---------- Changement d'utilisateur (code PIN) ---------- */
+function whoPick(){layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Qui utilise Wergui SN ?"><div class="top"><div><h2>Qui utilise Wergui SN ?</h2><p>Chacun se connecte avec son code. Les ventes sont enregistrées à son nom.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div style="display:flex;flex-direction:column;gap:8px">${S.users.filter(u=>u.actif).map(u=>`<button class="pick" data-pick="${u.id}" aria-current="${u.id===S.uid}"><span class="av">${initials(u)}</span><span class="nm"><b>${esc(u.nom)}</b><small>${roleName(u)}</small></span>${u.id===S.uid?'<span class="st ok">connecté</span>':""}</button>`).join("")}</div>
+  ${isTit()?'<button class="btn" data-go="parametres" data-stabgo="equipe">Gérer l\'équipe</button>':""}</div>`,true)}
+function askPin(u){if(!u.pin){switchUser(u);return}
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Code"><div class="top"><div><h2>${esc(u.nom)}</h2><p>${roleName(u)} · entrez votre code à 4 chiffres</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <input type="password" id="pin" class="pin" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="Code PIN">
+  <p class="demo-band">Démo : le code de ${esc(u.nom.split(" ")[0])} est ${u.pin}.</p>
+  <div class="row"><button class="btn pri" data-pinok="${u.id}">Se connecter</button><button class="btn" data-close="1">Annuler</button></div></div>`,true);
+  setTimeout(()=>{const i=document.getElementById("pin");i&&i.focus()},50)}
+function switchUser(u){S.uid=u.id;S.role=isTit()?"titulaire":"vendeur";S.cart=[];S.remise=0;closeLayer();S.view=navItems()[0][0];render();
+  toast(`Connecté : ${u.nom} (${roleName(u)}).`+(isTit()?" Accès complet.":` Accès : ${navItems().map(i=>SHORT[i[0]]||i[1]).join(", ")}.`))}
+
+/* ---------- Produits : créer, modifier ---------- */
+function editProd(id){const p=id?byId(id):null,v=(k,d="")=>p?esc(p[k]):d;
+  layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="Produit"><div class="top"><div><h2>${p?"Modifier le produit":"Nouveau produit"}</h2><p>${p?esc(p.nom):"Ajoutez un produit au stock. Les lots s'ajoutent ensuite par le scanner ou la réception."}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="form">
+    <div class="field full"><label for="pnom">Nom</label><input type="text" id="pnom" value="${v("nom")}" placeholder="ex. Paracétamol 1000 mg"></div>
+    <div class="field full"><label for="ppres">Présentation</label><input type="text" id="ppres" value="${v("pres")}" placeholder="ex. boîte de 8 cp"></div>
+    <div class="field"><label for="pcat">Rayon</label><select id="pcat">${CATS.map(c=>`<option ${p&&p.cat===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label for="pfour">Grossiste</label><select id="pfour">${Object.entries(FOUR).map(([k,f])=>`<option value="${k}" ${p&&p.f===k?"selected":""}>${esc(f.n)}</option>`).join("")}</select></div>
+    <div class="field"><label for="ppv">Prix de vente (F)</label><input type="number" id="ppv" min="0" inputmode="numeric" value="${p?p.pv:""}"></div>
+    <div class="field"><label for="ppa">Prix d'achat (F)</label><input type="number" id="ppa" min="0" inputmode="numeric" value="${p?p.pa:""}"></div>
+    <div class="field"><label for="pseuil">Seuil d'alerte (boîtes)</label><input type="number" id="pseuil" min="0" inputmode="numeric" value="${p&&p.seuilMan?p.seuilMan:""}" placeholder="auto${p?" : "+Math.ceil(p.vj*(FOUR[p.f].d+S.cfg.secu)):""}"></div>
+    <div class="field"><label for="pcode">Code-barres / CIP</label><input type="text" id="pcode" inputmode="numeric" value="${p?esc((p.gtins[0]||p.gtin||"").replace(/^0/,"")):""}"></div>
+  </div>
+  <p class="note-box">Laissez le seuil vide : Wergui SN le calcule tout seul à partir des ventes et du délai du grossiste.</p>
+  <div class="row"><button class="btn pri" data-saveprod="${p?p.id:0}">${p?"Enregistrer":"Créer le produit"}</button><button class="btn" data-close="1">Annuler</button>
+  ${p&&!p.lots.some(l=>l.q)?`<button class="btn bad" data-delprod="${p.id}">Supprimer</button>`:""}</div></div>`)}
+function saveProd(id){const g=k=>document.getElementById(k).value.trim(),nom=g("pnom"),pv=parseInt(g("ppv"))||0,pa=parseInt(g("ppa"))||0,se=parseInt(g("pseuil"))||0,code=g("pcode").replace(/\D/g,"");
+  if(!nom){toast("Indiquez le nom du produit.");return}if(!pv){toast("Indiquez le prix de vente.");return}
+  let p=id?byId(id):null;
+  if(!p){p={id:Math.max(...P.map(x=>x.id))+1,lots:[],vj:.5,gtin:"",gtins:[]};P.push(p)}
+  Object.assign(p,{nom,pres:g("ppres"),cat:document.getElementById("pcat").value,f:document.getElementById("pfour").value,pv,pa:pa||Math.round(pv/1.3),seuilMan:se||0});
+  if(code&&code.length>=8){const g14=code.padStart(14,"0");if(!findGtin(g14))p.gtins.unshift(g14)}
+  closeLayer();render(true);toast(id?`${nom} enregistré.`:`${nom} créé. Ajoutez ses lots avec le scanner (Entrée en stock).`)}
+
+/* ---------- Paramètres (titulaire) ---------- */
+const sw=(attr,on,label)=>`<label class="switch"><input type="checkbox" ${attr} ${on?"checked":""} aria-label="${esc(label)}"><span></span></label>`;
+V.parametres=()=>{const T=[["pharmacie","Pharmacie"],["equipe","Équipe"],["rayons","Rayons"],["grossistes","Grossistes"],["regles","Règles"]];
+  return head("Paramètres","Réservé au titulaire. Chaque réglage s'applique tout de suite à toute la pharmacie.")+
+  `<div class="seg" role="group" aria-label="Rubrique">${T.map(([k,l])=>`<button data-stab="${k}" aria-pressed="${S.setTab===k}">${l}</button>`).join("")}</div>`+SET[S.setTab]()};
+const SET={};
+SET.pharmacie=()=>{const c=S.cfg;return `<section class="panel"><header><div><h2>La pharmacie</h2><p>Ces informations apparaissent sur les tickets, les bons de commande et le résumé WhatsApp.</p></div></header>
+  <div class="form">
+    <div class="field full"><label for="cnom">Nom de la pharmacie</label><input type="text" id="cnom" value="${esc(c.nom)}"></div>
+    <div class="field full"><label for="cadr">Adresse</label><input type="text" id="cadr" value="${esc(c.adr)}"></div>
+    <div class="field"><label for="ctel">Téléphone</label><input type="tel" id="ctel" value="${esc(c.tel)}"></div>
+    <div class="field"><label for="cwa">WhatsApp du titulaire (résumé du matin)</label><input type="tel" id="cwa" value="${esc(c.wa)}"></div>
+    <div class="field"><label for="cheure">Heure du résumé WhatsApp</label><input type="text" id="cheure" value="${esc(c.heure)}" placeholder="07:30"></div>
+    <div class="field full"><label for="cticket">Message en bas des tickets</label><input type="text" id="cticket" value="${esc(c.ticket)}"></div>
+  </div>
+  <div class="row"><button class="btn pri" data-act="savepharma">Enregistrer</button></div></section>`};
+SET.equipe=()=>`<section class="panel"><header><div><h2>L'équipe</h2><p>Chacun a son code à 4 chiffres et ses droits. Les ventes sont enregistrées au nom de la personne connectée.</p></div><button class="btn pri" data-member="0">Ajouter un membre</button></header>
+  <div>${S.users.map(u=>`<div class="member ${u.actif?"":"off"}"><span class="av">${initials(u)}</span>
+    <div class="grow" style="flex:1;min-width:0"><b>${esc(u.nom)}</b>${u.id===S.uid?' <span class="st ok">connecté</span>':""}<small class="muted" style="display:block">${roleName(u)} · ${esc(u.tel)}${u.actif?"":" · désactivé"}</small>
+    ${u.role!=="titulaire"?`<small class="muted" style="display:block">${PERMS.filter(([k])=>u.perm[k]).map(x=>x[2]).join(" · ")||"Caisse, scanner et stock uniquement"}</small>`:'<small class="muted" style="display:block">Accès complet, paramètres et abonnement</small>'}</div>
+    ${u.role!=="titulaire"?`<div class="row" style="gap:6px"><button class="btn sm" data-member="${u.id}">Modifier</button><button class="btn sm" data-toggleuser="${u.id}">${u.actif?"Désactiver":"Réactiver"}</button></div>`:`<button class="btn sm" data-member="${u.id}">Modifier</button>`}</div>`).join("")}</div></section>
+  <p class="note-box">Caisse, scanner, stock et péremptions sont ouverts à tous. Le reste dépend des droits que vous donnez. Un vendeur qui part ? Désactivez-le : son historique de ventes est conservé.</p>`;
+function member(id){const u=id?S.users.find(x=>x.id===id):{nom:"",tel:"",role:"vendeur",pin:"",perm:permOf("vendeur"),actif:true},tit=u.role==="titulaire";
+  layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="Membre"><div class="top"><div><h2>${id?"Modifier "+esc(u.nom):"Nouveau membre"}</h2><p>${tit?"Titulaire : accès complet.":"Choisissez un rôle, puis ajustez les droits si besoin."}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="form">
+    <div class="field full"><label for="unom">Nom complet</label><input type="text" id="unom" value="${esc(u.nom)}" placeholder="ex. Awa Ba"></div>
+    <div class="field"><label for="utel">Téléphone (WhatsApp)</label><input type="tel" id="utel" value="${esc(u.tel)}" placeholder="77 …"></div>
+    <div class="field"><label for="upin">Code à 4 chiffres</label><input type="text" id="upin" inputmode="numeric" maxlength="4" value="${esc(u.pin)}" placeholder="${tit?"facultatif":"ex. 1234"}"></div>
+    ${tit?"":`<div class="field full"><label for="urole">Rôle</label><select id="urole">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${u.role===k?"selected":""}>${r.n}</option>`).join("")}</select></div>`}
+  </div>
+  ${tit?"":`<section class="panel"><header><h3>Droits</h3><p>Caisse, scanner, stock et péremptions : toujours ouverts.</p></header><div class="perms" id="uperms">${PERMS.map(([k,l])=>`<label><input type="checkbox" data-perm="${k}" ${u.perm[k]?"checked":""}> ${l}</label>`).join("")}</div></section>`}
+  <div class="row"><button class="btn pri" data-saveuser="${id||0}">${id?"Enregistrer":"Ajouter"}</button><button class="btn" data-close="1">Annuler</button></div></div>`)}
+function saveUser(id){const g=k=>(document.getElementById(k)||{value:""}).value.trim(),nom=g("unom"),pin=g("upin");
+  if(!nom){toast("Indiquez le nom.");return}if(pin&&!/^\d{4}$/.test(pin)){toast("Le code doit faire 4 chiffres.");return}
+  let u=id?S.users.find(x=>x.id===id):null;
+  if(!u){if(!pin){toast("Donnez-lui un code à 4 chiffres.");return}u={id:Math.max(...S.users.map(x=>x.id))+1,actif:true};S.users.push(u)}
+  Object.assign(u,{nom,tel:g("utel"),pin});
+  if(u.role!=="titulaire"||!id){u.role=g("urole")||u.role||"vendeur";u.perm=Object.fromEntries(PERMS.map(([k])=>[k,!!(document.querySelector(`[data-perm="${k}"]`)||{}).checked]))}
+  closeLayer();render(true);toast(id?`${nom} : modifications enregistrées.`:`${nom} ajouté. Son code lui est envoyé par WhatsApp (démo).`)}
+SET.rayons=()=>`<section class="panel"><header><div><h2>Les rayons</h2><p>Organisez le stock comme vos étagères. Ils servent aux filtres et à l'inventaire tournant.</p></div></header>
+  <div>${CATS.map((c,i)=>{const n=P.filter(p=>p.cat===c).length;return `<div class="set"><input type="text" data-cat="${i}" value="${esc(c)}" aria-label="Nom du rayon" style="flex:1;min-width:0"><span class="muted" style="white-space:nowrap">${n} produit${n>1?"s":""}</span><button class="btn sm bad" data-delcat="${i}" aria-label="Supprimer ${esc(c)}">Supprimer</button></div>`}).join("")}</div>
+  <div class="row"><input type="text" id="newcat" placeholder="Nouveau rayon, ex. Dermatologie" style="flex:1 1 220px"><button class="btn pri" data-act="addcat">Ajouter le rayon</button></div></section>
+  <p class="note-box">Pour renommer, modifiez le nom puis touchez ailleurs : tous les produits suivent. Un rayon qui contient des produits peut être supprimé : vous choisissez où les déplacer.</p>`;
+function delCat(i){const c=CATS[i],n=P.filter(p=>p.cat===c).length;if(CATS.length<2){toast("Il faut garder au moins un rayon.");return}
+  if(!n){CATS.splice(i,1);render(true);toast(`Rayon « ${c} » supprimé.`);return}
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Supprimer le rayon"><div class="top"><div><h2>Supprimer « ${esc(c)} »</h2><p>${n} produit${n>1?"s sont":" est"} dans ce rayon. Où les déplacer ?</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <select id="movecat">${CATS.filter(x=>x!==c).map(x=>`<option>${esc(x)}</option>`).join("")}</select>
+  <div class="row"><button class="btn bad" data-delcatok="${i}">Déplacer et supprimer</button><button class="btn" data-close="1">Annuler</button></div></div>`,true)}
+SET.grossistes=()=>`<section class="panel"><header><div><h2>Les grossistes</h2><p>Le délai de livraison sert à calculer les commandes. Le numéro WhatsApp reçoit les bons de commande.</p></div></header>
+  <div>${Object.entries(FOUR).map(([k,f])=>{const n=P.filter(p=>p.f===k).length;return `<div class="set" style="flex-wrap:wrap">
+    <div class="field" style="flex:1 1 160px"><label>Nom</label><input type="text" data-four="${k}|n" value="${esc(f.n)}"></div>
+    <div class="field"><label>Livré en (jours)</label><input type="number" class="qin" min="0" data-four="${k}|d" value="${f.d}"></div>
+    <div class="field" style="flex:1 1 140px"><label>WhatsApp du commercial</label><input type="tel" data-four="${k}|wa" value="${esc(f.wa||"")}" placeholder="77 …"></div>
+    <div class="field"><label>Reprend les produits</label>${sw(`data-fret="${k}"`,f.ret,"Reprend les produits")}</div>
+    <span class="muted">${n} produit${n>1?"s":""}</span>${n?"":`<button class="btn sm bad" data-delfour="${k}">Supprimer</button>`}</div>`}).join("")}</div>
+  <div class="row"><input type="text" id="newfour" placeholder="Nouveau grossiste" style="flex:1 1 220px"><button class="btn pri" data-act="addfour">Ajouter le grossiste</button></div></section>`;
+SET.regles=()=>{const c=S.cfg,num=(k,l,h,min,max,unit)=>`<div class="set"><div class="grow"><b>${l}</b><small>${h}</small></div><span class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" class="qin" data-cfg="${k}" min="${min}" max="${max}" value="${c[k]}" aria-label="${esc(l)}"><span class="muted">${unit}</span></span></div>`;
+  return `<section class="panel"><header><div><h2>Péremptions et stock</h2><p>Wergui SN applique ces règles à toutes les alertes et suggestions.</p></div></header>
+    ${num("alertJ","Alerter avant la péremption","Les lots entrent dans les alertes ce nombre de jours avant leur date.",15,365,"jours")}
+    ${num("recepMois","Péremption courte à la réception","En dessous, Wergui SN vous conseille de refuser le lot ou de négocier un retour.",1,24,"mois")}
+    ${num("secu","Stock de sécurité","Jours de ventes gardés en plus du délai du grossiste pour calculer le seuil d'alerte.",0,30,"jours")}
+    ${num("couv","Commandes : couvrir","Nombre de jours de ventes couverts par une commande suggérée.",3,60,"jours")}</section>
+  <section class="panel"><header><div><h2>Caisse</h2></div></header>
+    ${num("tp","Part prise en charge par l'assurance","Taux par défaut du tiers payant (IPM, mutuelles, CMU).",0,100,"%")}
+    ${Object.keys(c.pays).map(m=>`<div class="set"><div class="grow"><b>${m}</b><small>${m==="Assurance"?"Tiers payant":"Moyen de paiement accepté en caisse"}</small></div>${sw(`data-paym="${m}"`,c.pays[m],m)}</div>`).join("")}</section>`};
+
+/* ---------- Événements ---------- */
+document.addEventListener("click",e=>{const t=e.target.closest("button,[data-prod],[data-close]");if(!t)return;const d=t.dataset;
+  if(d.close&&(e.target===t)){closeLayer();return}
+  if(d.go){if(d.tab)S.perTab=d.tab;if(d.stabgo)S.setTab=d.stabgo;if(d.mode)S.scanMode=d.mode;go(d.go);return}
+  if(d.prod){fiche(d.prod);return}
+  if(d.add){addCart(d.add);return}
+  if(d.q){const[pid,s]=d.q.split("|"),c=S.cart.find(x=>x.pid===+pid);if(+s>0)return addCart(pid);c.q--;if(!c.q)S.cart=S.cart.filter(x=>x!==c);render(true);return}
+  if(d.pay){S.pay=d.pay;render(true);return}
+  if(d.per){S.perTab=d.per;render(true);return}
+  if(d.couv){S.couv=+d.couv;S.cmdQ={};render(true);return}
+  if(d.send){envoyer(d.send);return}
+  if(d.confirm){confirmer(d.confirm);return}
+  if(d.recv){recevoir(d.recv);return}
+  if(d.recok){valRecep(d.recok);return}
+  if(d.pm){payer(d.pm);return}
+  if(d.pick){const u=S.users.find(x=>x.id===+d.pick);if(u.id===S.uid){closeLayer();return}askPin(u);return}
+  if(d.pinok){const u=S.users.find(x=>x.id===+d.pinok);if(document.getElementById("pin").value===u.pin)switchUser(u);else{toast("Code incorrect.");document.getElementById("pin").value=""}return}
+  if(d.rem!=null&&d.rem!==undefined&&t.closest(".ticket")){S.remise=+d.rem;render(true);return}
+  if(d.stab){S.setTab=d.stab;render(true);return}
+  if(d.ftab){S.finTab=d.ftab;render(true);return}
+  if(d.bsend){const b=FIN.bord.find(x=>x.id===d.bsend);b.env="2026-11-01";render(true);toast(`Bordereau ${b.id} (${fmt(b.mt)}) envoyé à ${b.org} : PDF par e-mail et copie WhatsApp (démo).`);return}
+  if(d.brel){const b=FIN.bord.find(x=>x.id===d.brel);toast(`Relance envoyée à ${b.org} pour ${fmt(bordDu(b))} (démo).`);return}
+  if(d.bpay){payModal("b",d.bpay);return}
+  if(d.fpay){payModal("f",d.fpay);return}
+  if(d.payok){const[k,id]=d.payok.split("|"),m=Math.max(0,parseInt(document.getElementById("pmt").value)||0),mode=document.getElementById("pmode").value;
+    if(k==="f"){const x=FIN.fact.find(z=>z.id===id),av=avoirsDe(x.f),use=Math.min(av,resteFact(x)-m>0?resteFact(x)-m:0);x.paye=Math.min(x.mt,x.paye+m+use);if(use){let r=use;S.avoirs.filter(a=>a.p.f===x.f).forEach(a=>{const t=Math.min(a.v,r);a.v-=t;r-=t})}
+      closeLayer();render(true);toast(`Facture ${id} : ${fmt(m)} payés par ${mode}${use?` + avoir ${fmt(use)}`:""}.`)}
+    else{const b=FIN.bord.find(z=>z.id===id);b.paye=Math.min(b.mt,b.paye+m);closeLayer();render(true);toast(`${b.org} : ${fmt(m)} reçus (${mode}).${bordDu(b)?` Reste ${fmt(bordDu(b))}.`:" Bordereau soldé."}`)}return}
+  if(d.member){member(+d.member);return}
+  if(d.saveuser){saveUser(+d.saveuser);return}
+  if(d.toggleuser){const u=S.users.find(x=>x.id===+d.toggleuser);if(u.id===S.uid){toast("Vous ne pouvez pas vous désactiver vous-même.");return}u.actif=!u.actif;render(true);toast(`${u.nom} ${u.actif?"réactivé":"désactivé : il ne peut plus se connecter"}.`);return}
+  if(d.delcat){delCat(+d.delcat);return}
+  if(d.delcatok){const c=CATS[+d.delcatok],to=document.getElementById("movecat").value;P.forEach(p=>{if(p.cat===c)p.cat=to});CATS.splice(+d.delcatok,1);if(S.invCat===c)S.invCat=to;if(S.fcat===c)S.fcat="";closeLayer();render(true);toast(`Rayon « ${c} » supprimé, produits déplacés dans « ${to} ».`);return}
+  if(d.delfour){const f=FOUR[d.delfour];delete FOUR[d.delfour];render(true);toast(`${f.n} supprimé.`);return}
+  if(d.editprod){editProd(+d.editprod);return}
+  if(d.saveprod!==undefined){saveProd(+d.saveprod);return}
+  if(d.delprod){const p=byId(d.delprod);P.splice(P.indexOf(p),1);closeLayer();render(true);toast(`${p.nom} supprimé.`);return}
+  if(d.plan){payer(null,d.plan);return}
+  if(d.bill){S.bill=d.bill;render(true);return}
+  if(d.retire){const{p,l}=findLot(d.retire);S.pertes.push({p,n:l.n,q:l.q,v:l.q*p.pa});toast(`Lot ${l.n} retiré : ${l.q} × ${p.nom} mis en destruction (${fmt(l.q*p.pa)}).`);l.q=0;render(true);return}
+  if(d.retour){const{p,l}=findLot(d.retour);S.avoirs.push({p,n:l.n,q:l.q,v:l.q*p.pa});toast(`Retour préparé : ${l.q} × ${p.nom} chez ${FOUR[p.f].n}. Avoir attendu : ${fmt(l.q*p.pa)}.`);l.q=0;render(true);return}
+  if(d.prio){const{p,l}=findLot(d.prio);l.prio=!l.prio;render(true);toast(l.prio?`${p.nom} (lot ${l.n}) sera proposé en premier au comptoir.`:"Priorité retirée.");return}
+  if(d.smode){S.scanMode=d.smode;document.querySelectorAll("[data-smode]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.smode===S.scanMode));V_scanRes();return}
+  if(d.sample){onCode(SAMPLES[+d.sample][1](),"exemple");return}
+  const a=d.act;if(!a)return;
+  if(a==="camon")return camOn();
+  if(a==="camoff"){stopCam();document.getElementById("reader").innerHTML='<div class="ph">Caméra arrêtée.</div>';document.getElementById("camon").hidden=false;document.getElementById("camoff").hidden=true;return}
+  if(a==="scanadd")return scanAdd();
+  if(a==="scansell")return scanSell();
+  if(a==="scannext"){S.cur=null;V_scanRes();resumeCam();return}
+  if(a==="scanmanual"){S.cur={raw:"",kind:"Saisie manuelle",manual:true,gtin:"",lot:"",exp:"",serie:"",p:null};V_scanRes();return}
+  if(a==="scanmode"){S.scanMode=d.m;document.querySelectorAll("[data-smode]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.smode===S.scanMode));V_scanRes();return}
+  if(a==="encaisser")return encaisser();
+  if(a==="who")return whoPick();
+  if(a==="newprod")return editProd(0);
+  if(a==="export")return exportCompta();
+  if(a==="cloture"){const v=document.getElementById("compte").value;if(v===""){toast("Saisissez les espèces comptées.");return}const c=+v,att=especesAttendues(),e=c-att;
+    FIN.hist.unshift(["01/11/2026",att,c,me().nom]);FIN.caisse.ouverte=false;render(true);toast(e?`Caisse clôturée avec un écart de ${e>0?"+":"−"} ${fmt(Math.abs(e))}. Le titulaire est prévenu sur WhatsApp.`:"Caisse clôturée : le compte est juste.");return}
+  if(a==="ouvrir"){FIN.caisse={ouverte:true,fond:Math.max(0,parseInt(document.getElementById("fond").value)||0),par:me().nom,heure:"18:30"};render(true);toast("Caisse ouverte.");return}
+  if(a==="adddep"){const lib=document.getElementById("dlib").value.trim(),mt=parseInt(document.getElementById("dmt").value)||0;if(!lib||!mt){toast("Indiquez le libellé et le montant.");return}
+    const mode=document.getElementById("dmode").value;FIN.dep.push({d:"2026-11-01",lib,cat:document.getElementById("dcat").value,mt,mode});render(true);toast(`Dépense ajoutée : ${fmt(mt)}${mode==="Espèces caisse"?", retirée de la caisse du jour":""}.`);return}
+  if(a==="savepharma"){const g=k=>document.getElementById(k).value.trim();Object.assign(S.cfg,{nom:g("cnom")||S.cfg.nom,adr:g("cadr"),tel:g("ctel"),wa:g("cwa"),heure:/^\d{1,2}:\d{2}$/.test(g("cheure"))?g("cheure"):S.cfg.heure,ticket:g("cticket")});render(true);toast("Informations de la pharmacie enregistrées.");return}
+  if(a==="addcat"){const v=document.getElementById("newcat").value.trim();if(!v){toast("Indiquez le nom du rayon.");return}if(CATS.includes(v)){toast("Ce rayon existe déjà.");return}CATS.push(v);render(true);toast(`Rayon « ${v} » ajouté.`);return}
+  if(a==="addfour"){const v=document.getElementById("newfour").value.trim();if(!v){toast("Indiquez le nom du grossiste.");return}FOUR["g"+Date.now()]={n:v,d:2,ret:false,wa:""};render(true);toast(`${v} ajouté.`);return}
+  if(a==="vider"){S.cart=[];render(true);return}
+  if(a==="import")return toast("Envoyez votre fichier Excel ou l'export de votre ancien logiciel : on l'importe pour vous, gratuitement.");
+  if(a==="feuille")return toast(`Feuille de comptage « ${S.invCat} » prête (démo).`);
+  if(a==="toutok"){P.filter(p=>p.cat===S.invCat).forEach(p=>S.inv[p.id]=p.lots.reduce((s,l)=>s+l.q,0));render(true);return}
+  if(a==="valinv")return valInv();
+  if(a==="payer")return payer(null,null);
+  if(a==="paye"){const x=plan(S.payPlan),an=S.bill==="an",amt=an?x.m*10:x.m;if(S.payPlan)S.plan=S.payPlan;S.payPlan=null;S.paidUntil=an?"30/11/2027":"31/12/2026";
+    S.invoices.unshift([an?"Déc. 2026 – nov. 2027":"Décembre 2026",S.payM,"02/11/2026",amt]);closeLayer();render();toast(`Paiement de ${fmt(amt)} par ${S.payM} confirmé (démo). Formule ${x.n}. Reçu envoyé sur WhatsApp.`);return}
+  if(a==="more")return more();
+  if(a==="toticket"){document.getElementById("ticket").scrollIntoView({behavior:"smooth",block:"start"});return}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeLayer();if(e.key==="Enter"&&e.target.id==="pin"){const b=document.querySelector("[data-pinok]");b&&b.click();return}if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.prod)fiche(e.target.dataset.prod);
+  if(e.key==="Enter"&&e.target.id==="cq"){const q=S.q.trim().toLowerCase(),p=P.find(p=>(p.nom+" "+p.pres).toLowerCase().includes(q)&&stock(p));if(q&&p){addCart(p.id);S.q="";render(true);document.getElementById("cq").focus()}}});
+document.addEventListener("input",e=>{const t=e.target;
+  if(t.id==="cq"){S.q=t.value;fillRes();return}
+  if(t.id==="sq"){S.q=t.value;fillStock();return}
+  if(t.dataset.cq){S.cmdQ[t.dataset.cq]=Math.max(0,parseInt(t.value)||0);return}
+  if(t.id==="compte"){const el=document.getElementById("ecart"),v=t.value;if(v===""){el.textContent="Comptez le tiroir puis saisissez le montant.";el.style.color="";return}const e=+v-especesAttendues();el.innerHTML=e?`Écart : <b>${e>0?"+ ":"− "}${fmt(Math.abs(e))}</b>`:"<b>Compte juste ✓</b>";el.style.color=e<0?"var(--bad)":e>0?"var(--warn)":"var(--ok)";return}
+  if(t.dataset.inv){S.inv[t.dataset.inv]=t.value===""?null:Math.max(0,parseInt(t.value)||0);invTotals();return}
+  if(t.id&&t.id.startsWith("re")){const o=S.orders.find(x=>x.id===(document.querySelector("[data-recok]")||{}).dataset?.recok);o&&rwarn(o)}});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.cq){render(true);return}
+  if(t.id==="org"){S.org=t.value;render(true);return}
+  if(t.dataset.rappro){FIN.rappro[t.dataset.rappro]=t.checked;toast(t.checked?`${t.dataset.rappro} : montant vérifié avec le relevé.`:"Vérification retirée.");return}
+  if(t.dataset.cat!==undefined){const i=+t.dataset.cat,old=CATS[i],v=t.value.trim();if(!v||v===old){t.value=old;return}if(CATS.includes(v)){toast("Ce rayon existe déjà.");t.value=old;return}P.forEach(p=>{if(p.cat===old)p.cat=v});CATS[i]=v;if(S.invCat===old)S.invCat=v;if(S.fcat===old)S.fcat=v;render(true);toast(`Rayon renommé : « ${v} ».`);return}
+  if(t.dataset.four){const[k,f]=t.dataset.four.split("|");FOUR[k][f]=f==="d"?Math.max(0,parseInt(t.value)||0):t.value.trim();toast(`${FOUR[k].n} : enregistré.`);return}
+  if(t.dataset.fret){FOUR[t.dataset.fret].ret=t.checked;toast(`${FOUR[t.dataset.fret].n} ${t.checked?"reprend":"ne reprend pas"} les produits.`);return}
+  if(t.dataset.cfg){const k=t.dataset.cfg,v=Math.max(+t.min,Math.min(+t.max,parseInt(t.value)||0));S.cfg[k]=v;t.value=v;if(k==="couv"){S.couv=v;S.cmdQ={}}nav();toast("Règle enregistrée : elle s'applique tout de suite.");return}
+  if(t.dataset.paym){const m=t.dataset.paym;S.cfg.pays[m]=t.checked;if(!payModes().length){S.cfg.pays[m]=true;t.checked=true;toast("Il faut garder au moins un moyen de paiement.");return}toast(`${m} : ${t.checked?"accepté":"désactivé"} en caisse.`);return}
+  if(t.id==="urole"){const pm=permOf(t.value);document.querySelectorAll("[data-perm]").forEach(c=>c.checked=pm[c.dataset.perm]);return}
+  if(t.id==="scat"){S.fcat=t.value;fillStock();return}
+  if(t.id==="sst"){S.fst=t.value;fillStock();return}
+  if(t.id==="icat"){S.invCat=t.value;render(true);return}
+  if(t.id==="scanfile"&&t.files[0]){scanPhoto(t.files[0]);t.value="";return}
+  if(t.id==="sp"&&S.cur){S.cur.p=byId(t.value)||null;const lot=(document.getElementById("slot")||{}).value,exp=(document.getElementById("sexp")||{}).value;if(lot!=null){S.cur.lot=lot;S.cur.exp=exp}V_scanRes()}});
+render();
+</script>
+</body>
+</html>

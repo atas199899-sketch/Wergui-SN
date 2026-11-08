@@ -11,3 +11,5 @@ grant usage on schema auth to anon, authenticated;
 grant usage on schema public to anon, authenticated;
 alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
 alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
+alter table auth.users add column if not exists pw text;
+alter table auth.users add column if not exists created_at timestamptz default now();
