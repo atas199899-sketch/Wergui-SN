@@ -287,3 +287,6 @@ input[type=text],input[type=search],input[type=number],input[type=date],input[ty
 .busy{opacity:.6;pointer-events:none}
 #print{display:none}
 @media print{body>*:not(#print){display:none!important}#print{display:block;font-family:monospace;font-size:12px;width:72mm;color:#000}#print h3{font-size:14px;margin:0 0 4px}#print .l{display:flex;justify-content:space-between;gap:6px}}
+input:not([type]),input[type=email],input[type=password]{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-width:0;font:inherit;color:inherit}
+.authcard input{min-height:46px;padding:10px 12px;font-size:16px}
+.authcard .field label{color:var(--muted);font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
