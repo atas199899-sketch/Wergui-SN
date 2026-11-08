@@ -31,3 +31,30 @@ jobs:
           path: .
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  cloudflare:
+    # Publie aussi le site sur https://werguisn.pages.dev (Cloudflare Pages).
+    # Nécessite le secret CLOUDFLARE_API_TOKEN (Settings → Secrets and variables → Actions).
+    runs-on: ubuntu-latest
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CF_TOKEN != ''
+      - name: Base publique des médicaments
+        if: env.CF_TOKEN != ''
+        run: python3 scripts/build_medicaments.py
+        continue-on-error: true
+      - name: Publier sur Cloudflare Pages
+        if: env.CF_TOKEN != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 856fad5ade4a8e56c5e504e64d412f5e
+        run: |
+          mkdir -p _site_cf
+          cp -r index.html app demo _site_cf/
+          if [ -f medicaments.json ]; then cp medicaments.json _site_cf/; fi
+          npx --yes wrangler@4.152.0 pages deploy _site_cf --project-name werguisn --branch main --commit-dirty=true
+      - name: Secret manquant
+        if: env.CF_TOKEN == ''
+        run: echo "Ajoutez le secret CLOUDFLARE_API_TOKEN pour publier sur werguisn.pages.dev."
