@@ -52,7 +52,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 856fad5ade4a8e56c5e504e64d412f5e
         run: |
           mkdir -p _site_cf
-          cp -r index.html app demo _site_cf/
+          cp -r index.html legal.css app demo confidentialite conditions _site_cf/
           if [ -f medicaments.json ]; then cp medicaments.json _site_cf/; fi
           npx --yes wrangler@4.152.0 pages deploy _site_cf --project-name werguisn --branch main --commit-dirty=true
       - name: Secret manquant

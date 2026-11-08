@@ -79,5 +79,48 @@ select pg_temp.echoue(format('select public.receptionner_commande(%L,''[]'')',:'
 select public.modifier_membre(:'p','00000000-0000-0000-0000-00000000000b','Moussa','vendeur','{}',false);
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
 select pg_temp.ok((select count(*) from produits)=0,'vendeur désactivé : plus aucun accès');
+
+-- Formules et abonnement
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.echoue(format('update pharmacies set formule=''officine'', statut=''actif'' where id=%L',:'p'),'le titulaire ne peut pas changer lui-même sa formule');
+select pg_temp.echoue('select * from public.admin_pharmacies()','console réservée aux administrateurs');
+select pg_temp.echoue(format('select public.admin_definir_abonnement(%L,''officine'',''actif'',null)',:'p'),'seul un administrateur active une formule');
+reset role; insert into public.wergui_admins values ('00000000-0000-0000-0000-00000000000a');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.ok(public.suis_admin(),'administrateur reconnu');
+select pg_temp.ok((select count(*) from public.admin_pharmacies())=2,'la console liste les pharmacies');
+select public.admin_definir_abonnement(:'p','petite','actif',current_date+30);
+select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id":"%s","quantite":1}]'',''Assurance'',0,''CMU'')',:'p',:'prod'),'Petite officine : tiers payant refusé');
+select public.modifier_membre(:'p','00000000-0000-0000-0000-00000000000b','Moussa','vendeur','{"inv":true,"cmd":true}',true);
+reset role; select pg_temp.ok((select droits from membres where user_id='00000000-0000-0000-0000-00000000000b')='{"per":true,"recep":true}'::jsonb,'Petite officine : droits remis au modèle du rôle');
+insert into auth.users (id,email) values ('00000000-0000-0000-0000-00000000000d','second@ex.sn');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.echoue(format('select public.ajouter_membre(%L,''second@ex.sn'',''Awa'',''vendeur'',''{}'')',:'p'),'Petite officine : un seul membre en plus du titulaire');
+select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
+select public.ajouter_membre(:'p','second@ex.sn','Awa','vendeur','{"inv":true}');
+reset role; select pg_temp.ok((select (droits->>'inv')::boolean from membres where user_id='00000000-0000-0000-0000-00000000000d'),'Officine : équipe illimitée et droits personnalisés');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.admin_definir_abonnement(:'p','officine','suspendu',null);
+select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id":"%s","quantite":1}]'',''Espèces'',0,null)',:'p',:'prod'),'abonnement suspendu : ventes bloquées');
+select pg_temp.ok((select count(*) from produits where pharmacy_id=:'p')>=1,'abonnement suspendu : les données restent consultables');
+select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
+
+-- Compte et pharmacie : suppression, transfert
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');
+select pg_temp.echoue(format('select public.supprimer_pharmacie(%L,''Mauvais nom'')',:'p2'),'suppression de pharmacie refusée si le nom ne correspond pas');
+select pg_temp.echoue(format('select public.supprimer_pharmacie(%L,''Pharmacie Test'')',:'p'),'impossible de supprimer la pharmacie d''un autre');
+select public.supprimer_mon_compte(true);
+reset role;
+select pg_temp.ok((select count(*) from auth.users where id='00000000-0000-0000-0000-00000000000c')=0 and (select count(*) from pharmacies where id=:'p2')=0,'compte et pharmacie supprimés ensemble');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.modifier_membre(:'p','00000000-0000-0000-0000-00000000000b','Moussa','vendeur','{}',true);
+select pg_temp.echoue(format('select public.transferer_titulaire(%L,%L)',:'p','00000000-0000-0000-0000-00000000000a'),'transfert à soi-même refusé');
+select public.transferer_titulaire(:'p','00000000-0000-0000-0000-00000000000b');
+select public.supprimer_mon_compte(false);
+reset role;
+select pg_temp.ok((select role from membres where user_id='00000000-0000-0000-0000-00000000000b')='titulaire','transfert : Moussa devient titulaire');
+select pg_temp.ok((select count(*) from auth.users where id='00000000-0000-0000-0000-00000000000a')=0,'ancien titulaire peut supprimer son compte après le transfert');
+select pg_temp.ok((select count(*) from ventes where pharmacy_id=:'p')>=3 and (select count(*) from ventes where pharmacy_id=:'p' and user_id is null)>=2,'ventes conservées (sans nom) après suppression du vendeur');
 reset role;
 \echo TOUS LES TESTS SONT PASSÉS
