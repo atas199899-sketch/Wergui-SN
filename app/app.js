@@ -19,7 +19,7 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { ret
 function toast(t, bad) { document.querySelectorAll(".toast").forEach(x => x.remove()); const el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); if (bad) el.style.background = "var(--bad)"; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), bad ? 6000 : 3600); }
 function closeLayer() { $("#layer").innerHTML = ""; }
 function layer(html, center) { $("#layer").innerHTML = `<div class="overlay ${center ? "center" : ""}" data-close="1">${html}</div>`; cards($("#layer")); const f = $("#layer .x"); f && f.focus(); }
-function errMsg(e) { const m = (e && (e.message || e.error_description || e.msg)) || String(e); if (/Invalid login credentials/i.test(m)) return "E-mail ou mot de passe incorrect."; if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par e-mail)."; if (/User already registered/i.test(m)) return "Un compte existe déjà avec cet e-mail : connectez-vous."; if (/Password should be at least/i.test(m)) return "Mot de passe trop court (6 caractères minimum)."; if (/Failed to fetch|NetworkError/i.test(m)) return "Pas de connexion internet. Réessayez."; return m; }
+function errMsg(e) { const m = (e && (e.message || e.error_description || e.msg)) || String(e); if (/Invalid login credentials/i.test(m)) return "E-mail ou mot de passe incorrect."; if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par e-mail)."; if (/User already registered/i.test(m)) return "Un compte existe déjà avec cet e-mail : connectez-vous."; if (/Password should be at least|weak/i.test(m)) return "Mot de passe trop court ou trop simple (8 caractères minimum)."; if (/Failed to fetch|NetworkError/i.test(m)) return "Pas de connexion internet. Réessayez."; return m; }
 async function run(btn, fn) { if (btn) btn.classList.add("busy"); try { return await fn(); } catch (e) { console.warn(e); toast(errMsg(e), true); } finally { if (btn) btn.classList.remove("busy"); } }
 function cards(root) { (root || document).querySelectorAll(".tw table").forEach(t => { t.classList.add("cards"); const h = [...t.querySelectorAll("thead th")].map(x => x.textContent.trim()); t.querySelectorAll("tbody tr,tfoot tr").forEach(tr => { let i = 0; [...tr.children].forEach(td => { if (!td.hasAttribute("data-l")) td.setAttribute("data-l", td.colSpan > 1 ? "" : (h[i] || "")); i += td.colSpan || 1; }); }); }); }
 const normPhone = t => { let d = String(t || "").replace(/\D/g, ""); if (d.length === 9) d = "221" + d; return d; };
@@ -27,9 +27,10 @@ const normPhone = t => { let d = String(t || "").replace(/\D/g, ""); if (d.lengt
 /* ================================================================ accès aux données (Supabase) */
 const sb = (CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+const COLS = { produits: "id,pharmacy_id,nom,presentation,rayon_id,fournisseur_id,prix_vente,seuil,codes,actif,created_at", vente_lignes: "id,vente_id,pharmacy_id,produit_id,lot_id,quantite,prix_unitaire,created_at" };
 async function all(table, build) { // lit toutes les lignes, par pages de 1000
   let out = [], from = 0;
-  for (;;) { const rows = await q(build(sb.from(table).select("*")).range(from, from + 999)); out = out.concat(rows); if (rows.length < 1000) return out; from += 1000; }
+  for (;;) { const rows = await q(build(sb.from(table).select(COLS[table] || "*")).range(from, from + 999)); out = out.concat(rows); if (rows.length < 1000) return out; from += 1000; }
 }
 const rpc = (fn, args) => q(sb.rpc(fn, args));
 const API = {
@@ -56,6 +57,8 @@ const API = {
     ]);
     let cmds = [], cmdLignes = [];
     try { cmds = await all("commandes", b => b.eq("pharmacy_id", pid).eq("statut", "envoyee")); cmdLignes = cmds.length ? await all("commande_lignes", b => b.in("commande_id", cmds.map(c => c.id))) : []; } catch (e) { /* pas de droit commandes */ }
+    const couts = await rpc("couts_achat", { p: pid }), cm = new Map(couts.map(c => [c.id, c.prix_achat])); // vide sans le droit « Prix d'achat »
+    produits.forEach(p => p.prix_achat = cm.get(p.id) || 0);
     const vids = new Set(ventes.map(v => v.id));
     return { ph, membres, rayons, fours, produits, lots, ventes, lignes: lignes.filter(l => vids.has(l.vente_id)), mvts, cmds, cmdLignes };
   },
@@ -68,8 +71,8 @@ const API = {
   receptionner: (c, lignes) => rpc("receptionner_commande", { p_commande: c, p_lignes: lignes }),
   ajouterMembre: (p, email, nom, role, droits) => rpc("ajouter_membre", { p, p_email: email, p_nom: nom, p_role: role, p_droits: droits }),
   modifierMembre: (p, user, nom, role, droits, actif) => rpc("modifier_membre", { p, p_user: user, p_nom: nom, p_role: role, p_droits: droits, p_actif: actif }),
-  insert: (t, row) => q(sb.from(t).insert(row).select().single()),
-  update: (t, id, patch) => q(sb.from(t).update(patch).eq("id", id).select().single()),
+  insert: (t, row) => q(sb.from(t).insert(row).select(COLS[t] || "*").single()),
+  update: (t, id, patch) => q(sb.from(t).update(patch).eq("id", id).select(COLS[t] || "*").single()),
   remove: (t, id) => q(sb.from(t).delete().eq("id", id)),
   priorite: (lot, v) => q(sb.from("lots").update({ prioritaire: v }).eq("id", lot))
 };
@@ -152,10 +155,10 @@ function authScreen(mode, msg, err) {
   stopCam();
   const f = { login: `<form data-form="login"><div class="field"><label for="ae">E-mail</label><input id="ae" type="email" autocomplete="email" required></div><div class="field"><label for="ap">Mot de passe</label><input id="ap" type="password" autocomplete="current-password" required></div><button class="btn pri">Se connecter</button></form>
       <div class="row" style="justify-content:space-between"><button class="linkbtn" data-auth="creer">Créer ma pharmacie</button><button class="linkbtn" data-auth="oubli">Mot de passe oublié ?</button></div><button class="linkbtn" data-auth="rejoindre">Je travaille dans une pharmacie déjà inscrite</button>`,
-    creer: `<p class="muted">Créez le compte du pharmacien titulaire. Votre pharmacie est prête en 1 minute, en période d'essai gratuite.</p><form data-form="creer"><div class="field"><label for="cn">Votre nom</label><input id="cn" required placeholder="Dr Aïssatou Ndiaye" autocomplete="name"></div><div class="field"><label for="cph">Nom de la pharmacie</label><input id="cph" required placeholder="Pharmacie …"></div><div class="row"><div class="field" style="flex:1"><label for="cv">Ville</label><input id="cv" placeholder="Dakar"></div><div class="field" style="flex:1"><label for="ct">Téléphone</label><input id="ct" type="tel" placeholder="77 …"></div></div><div class="field"><label for="ce">E-mail</label><input id="ce" type="email" required autocomplete="email"></div><div class="field"><label for="cp">Mot de passe (6 caractères minimum)</label><input id="cp" type="password" minlength="6" required autocomplete="new-password"></div><button class="btn pri">Créer ma pharmacie</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
-    rejoindre: `<p class="muted">Créez votre compte personnel. Ensuite, donnez votre e-mail au pharmacien titulaire : il vous ajoute à l'équipe depuis ses paramètres.</p><form data-form="rejoindre"><div class="field"><label for="rn">Votre nom</label><input id="rn" required autocomplete="name"></div><div class="field"><label for="re">E-mail</label><input id="re" type="email" required autocomplete="email"></div><div class="field"><label for="rp">Mot de passe (6 caractères minimum)</label><input id="rp" type="password" minlength="6" required autocomplete="new-password"></div><button class="btn pri">Créer mon compte</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
+    creer: `<p class="muted">Créez le compte du pharmacien titulaire. Votre pharmacie est prête en 1 minute, en période d'essai gratuite.</p><form data-form="creer"><div class="field"><label for="cn">Votre nom</label><input id="cn" required placeholder="Dr Aïssatou Ndiaye" autocomplete="name"></div><div class="field"><label for="cph">Nom de la pharmacie</label><input id="cph" required placeholder="Pharmacie …"></div><div class="row"><div class="field" style="flex:1"><label for="cv">Ville</label><input id="cv" placeholder="Dakar"></div><div class="field" style="flex:1"><label for="ct">Téléphone</label><input id="ct" type="tel" placeholder="77 …"></div></div><div class="field"><label for="ce">E-mail</label><input id="ce" type="email" required autocomplete="email"></div><div class="field"><label for="cp">Mot de passe (8 caractères minimum)</label><input id="cp" type="password" minlength="8" required autocomplete="new-password"></div><button class="btn pri">Créer ma pharmacie</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
+    rejoindre: `<p class="muted">Créez votre compte personnel. Ensuite, donnez votre e-mail au pharmacien titulaire : il vous ajoute à l'équipe depuis ses paramètres.</p><form data-form="rejoindre"><div class="field"><label for="rn">Votre nom</label><input id="rn" required autocomplete="name"></div><div class="field"><label for="re">E-mail</label><input id="re" type="email" required autocomplete="email"></div><div class="field"><label for="rp">Mot de passe (8 caractères minimum)</label><input id="rp" type="password" minlength="8" required autocomplete="new-password"></div><button class="btn pri">Créer mon compte</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
     oubli: `<p class="muted">Recevez un lien par e-mail pour choisir un nouveau mot de passe.</p><form data-form="oubli"><div class="field"><label for="oe">E-mail</label><input id="oe" type="email" required autocomplete="email"></div><button class="btn pri">Envoyer le lien</button></form><button class="linkbtn" data-auth="login">Retour à la connexion</button>`,
-    nouveau: `<p class="muted">Choisissez votre nouveau mot de passe.</p><form data-form="nouveau"><div class="field"><label for="np">Nouveau mot de passe</label><input id="np" type="password" minlength="6" required autocomplete="new-password"></div><button class="btn pri">Enregistrer</button></form>` };
+    nouveau: `<p class="muted">Choisissez votre nouveau mot de passe.</p><form data-form="nouveau"><div class="field"><label for="np">Nouveau mot de passe</label><input id="np" type="password" minlength="8" required autocomplete="new-password"></div><button class="btn pri">Enregistrer</button></form>` };
   const t = { login: "Connexion", creer: "Créer ma pharmacie", rejoindre: "Rejoindre une pharmacie", oubli: "Mot de passe oublié", nouveau: "Nouveau mot de passe" }[mode];
   $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><svg width="34" height="34" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="currentColor" opacity=".16"/><path d="M12 6h6v6h6v6h-6v6h-6v-6H6v-6h6z" fill="currentColor"/></svg><b>Wergui SN</b></div><h1>${t}</h1>${err ? `<p class="err">${esc(err)}</p>` : ""}${msg ? `<p class="info">${esc(msg)}</p>` : ""}${f[mode]}<p class="muted" style="font-size:.8rem"><a href="../">Accueil</a> · <a href="../demo/">Voir la démo</a></p></div></div>`;
   const i = $("#root input"); i && i.focus();
@@ -212,7 +215,7 @@ function compte() {
   const m = me();
   layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Mon compte"><div class="top"><div><h2>${esc(m.nom)}</h2><p>${esc(S.user.email)} · ${roleName(m.role)}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
   ${S.mems.length > 1 ? `<div class="field"><label>Pharmacie</label><div style="display:flex;flex-direction:column;gap:8px">${S.phs.map(p => `<button class="pick" data-pid="${p.id}" aria-current="${p.id === S.pid}"><span class="nm"><b>${esc(p.nom)}</b><small>${esc(p.ville || "")}</small></span></button>`).join("")}</div></div>` : ""}
-  <div class="field"><label for="npw">Changer de mot de passe</label><div class="row"><input id="npw" type="password" minlength="6" placeholder="Nouveau mot de passe" style="flex:1"><button class="btn" data-act="setpw">Enregistrer</button></div></div>
+  <div class="field"><label for="npw">Changer de mot de passe</label><div class="row"><input id="npw" type="password" minlength="8" placeholder="Nouveau mot de passe" style="flex:1"><button class="btn" data-act="setpw">Enregistrer</button></div></div>
   <div class="row"><button class="btn" data-act="refresh">Actualiser les données</button><button class="btn bad" data-act="logout">Se déconnecter</button></div></div>`, true);
 }
 
@@ -518,7 +521,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "compte") return compte();
   if (a === "logout") { await API.signOut(); D = null; S.pid = null; closeLayer(); return authScreen("login"); }
   if (a === "refresh") { closeLayer(); return run(t, () => reload()); }
-  if (a === "setpw") { const v = $("#npw").value; if (v.length < 6) return toast("6 caractères minimum.", true); return run(t, async () => { await API.setPassword(v); closeLayer(); toast("Mot de passe changé."); }); }
+  if (a === "setpw") { const v = $("#npw").value; if (v.length < 8) return toast("8 caractères minimum.", true); return run(t, async () => { await API.setPassword(v); closeLayer(); toast("Mot de passe changé."); }); }
   if (a === "encaisser") return encaisser(t);
   if (a === "vider") { S.cart = []; return render(true); }
   if (a === "toticket") return $("#ticket").scrollIntoView({ behavior: "smooth", block: "start" });

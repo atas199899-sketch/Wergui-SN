@@ -21,7 +21,7 @@ function where(params, vals) { const conds = []; for (const [k, v] of params) { 
 const body = req => new Promise(r => { let d = ""; req.on("data", c => d += c); req.on("end", () => { try { r(d ? JSON.parse(d) : {}); } catch (e) { r({}); } }); });
 async function auth(req, res, p, url) { const b = ["POST", "PUT"].includes(req.method) ? await body(req) : {};
   if (p === "signup") { const ex = await pool.query("select * from auth.users where lower(email)=lower($1)", [b.email]); if (ex.rows.length) return send(res, 422, { code: 422, error_code: "user_already_exists", msg: "User already registered" });
-    if ((b.password || "").length < 6) return send(res, 422, { code: 422, error_code: "weak_password", msg: "Password should be at least 6 characters." });
+    if ((b.password || "").length < 8) return send(res, 422, { code: 422, error_code: "weak_password", msg: "Password should be at least 8 characters." });
     const u = (await pool.query("insert into auth.users (email,pw,raw_user_meta_data) values ($1,$2,$3) returning *", [b.email, b.password, b.data || {}])).rows[0]; return send(res, 200, session(u)); }
   if (p === "token") { const gt = url.searchParams.get("grant_type"); let u;
     if (gt === "password") u = (await pool.query("select * from auth.users where lower(email)=lower($1) and pw=$2", [b.email, b.password])).rows[0];
@@ -35,16 +35,17 @@ async function auth(req, res, p, url) { const b = ["POST", "PUT"].includes(req.m
 async function rest(req, res, p, url) { const sub = subOf(req), single = /vnd\.pgrst\.object/.test(req.headers.accept || ""), params = [...url.searchParams.entries()];
   try {
     if (p.startsWith("rpc/")) { const fn = p.slice(4); if (!idOk(fn)) throw new Error("bad fn"); const b = await body(req), keys = Object.keys(b), vals = keys.map(k => { const v = b[k]; return v === null ? null : typeof v === "object" ? JSON.stringify(v) : String(v); });
-      const r = await asUser(sub, c => c.query(`select public."${fn}"(${keys.map((k, i) => `"${k}" => $${i + 1}`).join(",")}) as r`, vals)); return send(res, 200, r.rows[0].r); }
+      const call = `public."${fn}"(${keys.map((k, i) => `"${k}" => $${i + 1}`).join(",")})`, set = (await pool.query("select bool_or(proretset) as s from pg_proc where proname=$1 and pronamespace='public'::regnamespace", [fn])).rows[0].s;
+      const r = await asUser(sub, c => c.query(set ? `select * from ${call}` : `select ${call} as r`, vals)); return send(res, 200, set ? r.rows : r.rows[0].r); }
     const t = p; if (!idOk(t)) throw new Error("bad table");
-    const vals = [], w = where(params, vals);
-    if (req.method === "GET") { let sql = `select * from public."${t}"${w}`; const o = url.searchParams.get("order"); if (o) sql += " order by " + o.split(",").map(x => { const [c, d] = x.split("."); if (!idOk(c)) throw new Error("bad order"); return `"${c}" ${d === "desc" ? "desc" : "asc"}`; }).join(","); const lim = url.searchParams.get("limit"), off = url.searchParams.get("offset"); if (lim) sql += " limit " + (+lim); if (off) sql += " offset " + (+off);
+    const vals = [], w = where(params, vals), selp = url.searchParams.get("select"), selCols = !selp || selp === "*" ? "*" : selp.split(",").map(c => { if (!idOk(c)) throw new Error("bad select"); return `"${c}"`; }).join(",");
+    if (req.method === "GET") { let sql = `select ${selCols} from public."${t}"${w}`; const o = url.searchParams.get("order"); if (o) sql += " order by " + o.split(",").map(x => { const [c, d] = x.split("."); if (!idOk(c)) throw new Error("bad order"); return `"${c}" ${d === "desc" ? "desc" : "asc"}`; }).join(","); const lim = url.searchParams.get("limit"), off = url.searchParams.get("offset"); if (lim) sql += " limit " + (+lim); if (off) sql += " offset " + (+off);
       const r = await asUser(sub, c => c.query(sql, vals)); if (single) return r.rows.length === 1 ? send(res, 200, r.rows[0]) : send(res, 406, { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" }); return send(res, 200, r.rows); }
     const b = await body(req);
     if (req.method === "POST") { const rows = Array.isArray(b) ? b : [b], cols = Object.keys(rows[0]).filter(idOk), v2 = [], tuples = rows.map(row => "(" + cols.map(c => { v2.push(row[c] === undefined ? null : (row[c] !== null && typeof row[c] === "object" && !Array.isArray(row[c]) ? JSON.stringify(row[c]) : row[c])); return "$" + v2.length; }).join(",") + ")");
-      const r = await asUser(sub, c => c.query(`insert into public."${t}" (${cols.map(c => `"${c}"`).join(",")}) values ${tuples.join(",")} returning *`, v2)); return send(res, 201, single ? r.rows[0] : r.rows); }
+      const r = await asUser(sub, c => c.query(`insert into public."${t}" (${cols.map(c => `"${c}"`).join(",")}) values ${tuples.join(",")} returning ${selCols}`, v2)); return send(res, 201, single ? r.rows[0] : r.rows); }
     if (req.method === "PATCH") { const cols = Object.keys(b).filter(idOk), set = cols.map(c => { vals.push(b[c] !== null && typeof b[c] === "object" && !Array.isArray(b[c]) ? JSON.stringify(b[c]) : b[c]); return `"${c}" = $${vals.length}`; });
-      const r = await asUser(sub, c => c.query(`update public."${t}" set ${set.join(",")}${w} returning *`, vals)); if (single) return r.rows.length === 1 ? send(res, 200, r.rows[0]) : send(res, 406, { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" }); return send(res, 200, r.rows); }
+      const r = await asUser(sub, c => c.query(`update public."${t}" set ${set.join(",")}${w} returning ${selCols}`, vals)); if (single) return r.rows.length === 1 ? send(res, 200, r.rows[0]) : send(res, 406, { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" }); return send(res, 200, r.rows); }
     if (req.method === "DELETE") { await asUser(sub, c => c.query(`delete from public."${t}"${w}`, vals)); return send(res, 204); }
     send(res, 405, { message: "method" });
   } catch (e) { send(res, e.code === "42501" ? 403 : 400, { code: e.code || "MOCK", message: e.message, details: e.detail || null, hint: e.hint || null }); } }

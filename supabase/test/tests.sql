@@ -55,6 +55,10 @@ select pg_temp.echoue(format('select public.creer_commande(%L,(select id from fo
 update pharmacies set nom='Pirate' where id=:'p';
 select pg_temp.ok((select nom from pharmacies where id=:'p')='Pharmacie Test','vendeur : modification de la pharmacie sans effet');
 
+select pg_temp.echoue('select prix_achat from produits','vendeur : lecture directe des prix d''achat refusée');
+select pg_temp.ok((select count(*) from public.couts_achat(:'p'))=0,'vendeur : aucun prix d''achat par la fonction');
+select pg_temp.ok((select count(*) from produits where nom like 'Parac%')=1,'vendeur : lit toujours le catalogue (sans prix d''achat)');
+select pg_temp.echoue(format('select public.est_membre(%L)',:'p'),'fonctions de contrôle plus appelables depuis l''API (schéma privé)');
 -- Autre utilisateur : ne voit rien
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.ok((select count(*) from produits)=0 and (select count(*) from pharmacies)=0 and (select count(*) from ventes)=0,'une autre personne ne voit rien de la pharmacie');
@@ -65,6 +69,7 @@ select pg_temp.ok((select count(*) from pharmacies)=1,'elle ne voit que sa propr
 
 -- Titulaire : inventaire, commande, réception, désactivation
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.ok((select prix_achat from public.couts_achat(:'p') limit 1)=420,'titulaire : voit les prix d''achat');
 select public.ajuster_inventaire(:'p',:'prod',15) as ecart \gset
 select pg_temp.ok(:ecart=-1 and (select sum(quantite) from lots where produit_id=:'prod')=15,'inventaire : 16 en stock, 15 comptés, écart -1 corrigé');
 select public.creer_commande(:'p',(select id from fournisseurs where pharmacy_id=:'p' and nom='Laborex'),('[{"produit_id":"'||:'prod'||'","quantite":30}]')::jsonb) as c \gset
