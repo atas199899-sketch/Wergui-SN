@@ -175,6 +175,34 @@ select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
 select pg_temp.ok((public.verifier_pin('2580')->>'aucun')::boolean,'le PIN d''un autre ne sert à rien');
 reset role;
 
+-- Paiement de l'abonnement (version manuelle)
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue('select public.admin_config(''770000000'','''','''')','seul un administrateur règle les numéros');
+select pg_temp.echoue(format('select public.declarer_paiement(%L,''officine'',1,''Wave'',null)',:'p'),'impossible de déclarer pour la pharmacie d''un autre');
+select public.declarer_paiement(:'p2','officine',12,'Wave','TX-123') as pay \gset
+select pg_temp.ok((select montant from paiements where id=:'pay')=250000,'montant calculé en base (12 mois = 10 x 25 000 F)');
+select pg_temp.echoue(format('select public.declarer_paiement(%L,''petite'',1,''Wave'',null)',:'p2'),'un seul paiement en attente');
+select pg_temp.echoue(format('select public.admin_traiter_paiement(%L,true,null)',:'pay'),'le titulaire ne valide pas lui-même');
+select pg_temp.echoue(format('insert into paiements (pharmacy_id,formule,mois,montant,moyen) values (%L,''officine'',12,1,''Wave'')',:'p2'),'insertion directe refusée');
+select pg_temp.ok((select count(*) from paiements)=1,'le titulaire voit ses paiements');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.ok((select count(*) from paiements)=0,'un vendeur ne voit pas les paiements des autres');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.admin_config('77 000 00 00','','Wergui SN');
+select pg_temp.ok((select wave_numero from wergui_config)='77 000 00 00','numéro Wave réglé par l''administrateur');
+select public.admin_traiter_paiement(:'pay',true,'Reçu') as fin \gset
+reset role;
+select pg_temp.ok((select statut='actif' and formule='officine' and paye_jusqu=(current_date + interval '12 months')::date from pharmacies where id=:'p2'),'validation : Officine active pour 12 mois');
+select pg_temp.echoue(format('select public.admin_traiter_paiement(%L,false,null)',:'pay'),'paiement déjà traité');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select public.declarer_paiement(:'p2','officine',1,'Orange Money',null) as pay2 \gset
+select public.annuler_paiement(:'pay2');
+select public.declarer_paiement(:'p2','officine',1,'Wave',null) as pay3 \gset
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.admin_traiter_paiement(:'pay3',true,null);
+reset role;
+select pg_temp.ok((select paye_jusqu=(current_date + interval '13 months')::date from pharmacies where id=:'p2'),'renouvellement : un mois ajouté à la suite');
+
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');

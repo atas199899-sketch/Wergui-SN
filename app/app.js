@@ -39,6 +39,13 @@ const API = {
   signUp: (email, password, data) => q(sb.auth.signUp({ email, password, options: { data, emailRedirectTo: APP_URL } })),
   signOut: () => sb.auth.signOut(),
   signOutLocal: () => sb.auth.signOut({ scope: "local" }),
+  config: () => q(sb.from("wergui_config").select("*").eq("id", 1).maybeSingle()),
+  paiements: p => q(sb.from("paiements").select("*").eq("pharmacy_id", p).order("declare_le", { ascending: false }).limit(24)),
+  declarerPaiement: (p, f, m, moyen, ref) => rpc("declarer_paiement", { p, p_formule: f, p_mois: m, p_moyen: moyen, p_reference: ref || null }),
+  annulerPaiement: id => rpc("annuler_paiement", { p_id: id }),
+  adminPaiements: () => q(sb.from("paiements").select("*").order("declare_le", { ascending: false }).limit(100)),
+  adminTraiter: (id, ok, note) => rpc("admin_traiter_paiement", { p_id: id, p_ok: ok, p_note: note || null }),
+  adminConfig: (w, om, b) => rpc("admin_config", { p_wave: w, p_om: om, p_beneficiaire: b }),
   definirPin: pin => rpc("definir_pin", { p_pin: pin }),
   aUnPin: () => rpc("a_un_pin", {}),
   recover: email => q(sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL })),
@@ -129,6 +136,7 @@ function contactLien(msg) { return CFG.contactWhatsApp ? `https://wa.me/${normPh
 function bandeau() { const p = D.ph, r = essaiReste();
   if (p.statut === "suspendu") return `<p class="err" role="alert">Abonnement suspendu : les ventes et entrées de stock sont bloquées, vos données restent consultables. ${isTit() ? `<a href="${contactLien("Bonjour, je souhaite réactiver l'abonnement de " + p.nom)}" target="_blank" rel="noopener">Réactiver</a>` : "Prévenez le titulaire."}</p>`;
   if (r != null && r < 0) return `<p class="err" role="alert">Votre période d'essai est terminée. ${isTit() ? `<button class="linkbtn" data-go="abonnement">Choisir une formule</button>` : "Prévenez le titulaire."}</p>`;
+  if (p.statut === "actif" && p.paye_jusqu && isTit()) { const j = dj(p.paye_jusqu); if (j < 0) return `<p class="err" role="alert">Votre abonnement a pris fin le ${dfr(p.paye_jusqu)}. <button class="linkbtn" data-go="abonnement">Renouveler</button></p>`; if (j <= 7) return `<p class="info">Votre abonnement se termine le ${dfr(p.paye_jusqu)}. <button class="linkbtn" data-go="abonnement">Renouveler</button></p>`; }
   if (r != null && r <= 7 && isTit()) return `<p class="info">Essai gratuit : ${pl(r, "jour restant", "jours restants")}. <button class="linkbtn" data-go="abonnement">Choisir une formule</button></p>`;
   return ""; }
 const R = () => Object.assign({ alerte_jours: 90, securite_jours: 4, couverture_jours: 14, reception_mois: 6, tiers_payant: 80, paiements: ["Espèces","Wave","Orange Money","Assurance"], organismes: ["IPM","Mutuelle","CMU"] }, (D && D.ph.reglages) || {});
@@ -166,7 +174,7 @@ const SHORT = { accueil: "Accueil", caisse: "Caisse", scanner: "Scanner", stock:
 function navItems() {
   const per = perimes().length + sous(0, 30).length, sg = can("cmd") ? sugList().length : 0, rec = D.cmds.length;
   const all = [["accueil","Tableau de bord"],["caisse","Caisse"],["scanner","Scanner"],["stock","Stock"],["peremption","Péremptions",per],["commandes","Commandes",sg + rec],["inventaire","Inventaire"],["finances","Finances"],["parametres","Paramètres"],["abonnement","Abonnement"]];
-  if (S.admin) all.push(["console","Console Wergui SN"]);
+  if (S.admin) all.push(["console","Console Wergui SN", S.adminPend || 0]);
   const ok = { accueil: can("dash"), finances: can("fin"), commandes: can("cmd") || can("recep"), inventaire: can("inv"), parametres: isTit(), abonnement: isTit() };
   return all.filter(i => ok[i[0]] !== false);
 }
@@ -195,7 +203,7 @@ let LAST = Date.now();
 ["click","keydown","touchstart","scroll"].forEach(ev => document.addEventListener(ev, () => { LAST = Date.now(); }, { passive: true }));
 setInterval(async () => { if (!D) return; if (posteOn()) { const pm = +R().deconnexion_min || 10; if (Date.now() - LAST > pm * 60000) verrouiller(`Verrouillé après ${pl(pm, "minute")} sans activité.`); return; } const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
 function confirmerTexte(t) { return S._confirm === t ? (S._confirm = null, true) : (S._confirm = t, toast(t + " Touchez à nouveau pour confirmer."), false); }
-function go(v) { S.view = v; S.q = ""; if (v === "finances") S.fin = null; closeLayer(); render(); }
+function go(v) { S.view = v; S.q = ""; if (v === "finances") S.fin = null; if (v === "abonnement") S.abo = null; if (v === "console") S.adminList = null; closeLayer(); render(); }
 const head = (t, s, right = "") => `<div class="top"><div><h1>${t}</h1><p>${s}</p></div><div class="row">${right}</div></div>`;
 async function reload(keep) { D = await API.load(S.pid); computeVJ(); if (!S.invCat) S.invCat = (D.rayons[0] || {}).id || ""; render(keep); }
 
@@ -299,6 +307,7 @@ async function boot() {
   store.set("wergui.pid", S.pid);
   $("#root").innerHTML = `<div class="loading"><div><div class="spin"></div>Chargement de la pharmacie…</div></div>`;
   try { S.admin = await API.suisAdmin(); } catch (e) { S.admin = false; }
+  if (S.admin) { try { S.adminPend = (await API.adminPaiements()).filter(x => x.statut === "en_attente").length; } catch (e) {} }
   D = await API.load(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
   if (location.hash === "#console" && S.admin) S.view = "console";
   try { S.pinOk = await API.aUnPin(); } catch (e) { S.pinOk = false; }
@@ -518,19 +527,51 @@ async function saveReglages(patch) { const reglages = Object.assign({}, R(), pat
 const FORMULES = [
   { k: "petite", n: "Petite officine", prix: 15000, inst: 35000, items: ["Toutes les fonctions de base : stock par lot, alertes de péremption, scanner, caisse, commandes, inventaire", "1 membre en plus du titulaire", "Jusqu'à 1 500 références"] },
   { k: "officine", n: "Officine", prix: 25000, inst: 50000, items: ["Tout ce qui est dans Petite officine", "Tiers payant : IPM, mutuelles, CMU", "Finances : clôture de caisse, bordereaux d'assurance, factures grossistes, dépenses, résultat du mois et export comptable", "Équipe illimitée et droits sur mesure", "Références illimitées"] }];
+const DUREES = [[1, "1 mois"], [12, "12 mois · 2 mois offerts"]];
+const prixDe = (f, m) => (FORMULES.find(x => x.k === f) || FORMULES[0]).prix * (m === 12 ? 10 : 1);
+const STP = { en_attente: '<span class="st warn">En vérification</span>', valide: '<span class="st ok">Validé</span>', refuse: '<span class="st bad">Refusé</span>' };
 V.abonnement = () => { const p = D.ph, r = essaiReste(), cur = FORMULES.find(f => f.k === p.formule);
+  if (!S.abo) { Promise.all([API.config(), API.paiements(S.pid), q(sb.from("pharmacies").select("*").eq("id", S.pid).single())]).then(([cfg, pays, ph]) => { S.abo = { cfg: cfg || {}, pays }; D.ph = ph; nav(); if (S.view === "abonnement") render(true); }).catch(e => toast(errMsg(e), true)); return head("Abonnement", "Chargement…"); }
+  const { cfg, pays } = S.abo, att = pays.find(x => x.statut === "en_attente"), moyens = [["Wave", cfg.wave_numero], ["Orange Money", cfg.om_numero]].filter(x => x[1]);
+  if (!S.payF) S.payF = p.statut === "essai" ? "officine" : p.formule; if (!S.payM) S.payM = 1; if (!moyens.some(x => x[0] === S.payMoy)) S.payMoy = (moyens[0] || [])[0];
+  const num = (moyens.find(x => x[0] === S.payMoy) || [])[1], mt = prixDe(S.payF, S.payM);
   const etat = p.statut === "suspendu" ? '<span class="st bad">Suspendu</span>' : p.statut === "essai" ? `<span class="st acc">Essai${r != null ? (r >= 0 ? " · " + pl(r, "jour restant", "jours restants") : " terminé") : ""}</span>` : '<span class="st ok">Actif</span>';
-  return head("Abonnement", "Prix TTC, payés chaque mois par Wave ou Orange Money. En paiement annuel : 2 mois et l'installation offerts.") +
+  return head("Abonnement", "Prix TTC, payés par Wave ou Orange Money. En paiement annuel : 2 mois offerts.") +
   `<section class="panel"><header><div><h2>${p.statut === "essai" ? "Période d'essai : toutes les fonctions" : "Formule " + cur.n}</h2><p>${p.statut === "essai" ? `Jusqu'au ${dfr(p.essai_fin)}. Choisissez ensuite votre formule.` : `${fmt(cur.prix)} par mois${p.paye_jusqu ? " · payé jusqu'au " + dfr(p.paye_jusqu) : ""}`}</p></div>${etat}</header></section>
   <div class="plans">${FORMULES.map(f => `<section class="plan ${f.k === "officine" ? "cur" : "alt"}">${f.k === "officine" ? '<span class="tagp">Premium</span>' : ""}<span class="lbl">${f.n}</span><div><span class="price">${nb(f.prix)} F</span> <span class="muted">/ mois</span></div><ul class="grow">${f.items.map(i => `<li>${i}</li>`).join("")}</ul><div class="inst">Installation : ${fmt(f.inst)}, payable en 3 fois</div>
-    ${p.statut !== "essai" && p.formule === f.k ? '<span class="st ok" style="align-self:flex-start">Votre formule</span>' : `<a class="btn ${f.k === "officine" ? "pri" : ""}" style="text-decoration:none;text-align:center" href="${contactLien(`Bonjour, je souhaite la formule ${f.n} (${nb(f.prix)} F/mois) pour ${p.nom}.`)}" target="_blank" rel="noopener">Choisir ${f.n}</a>`}</section>`).join("")}</div>
-  <p class="note-box">Le paiement se fait par Wave ou Orange Money. Après réception, Wergui SN active votre formule (en général le jour même). Contact : ${esc(CFG.contactWhatsApp ? "WhatsApp +" + normPhone(CFG.contactWhatsApp) : CONTACT_MAIL)}.</p>`; };
+    ${p.statut !== "essai" && p.formule === f.k ? `<span class="st ok" style="align-self:flex-start">Votre formule</span><button class="btn" data-pform="${f.k}" data-scroll="1">Renouveler</button>` : `<button class="btn ${f.k === "officine" ? "pri" : ""}" data-pform="${f.k}" data-scroll="1">Choisir ${f.n}</button>`}</section>`).join("")}</div>
+  ${att ? `<section class="panel" id="paypanel"><header><div><h2>Paiement en cours de vérification</h2><p>Déclaré le ${dfr(att.declare_le)} à ${hm(att.declare_le)} : ${fmt(att.montant)} par ${esc(att.moyen)} pour la formule ${(FORMULES.find(f => f.k === att.formule) || {}).n} (${att.mois === 12 ? "12 mois" : "1 mois"})${att.reference ? ` · réf. ${esc(att.reference)}` : ""}.</p></div>${STP.en_attente}</header>
+    <p class="note-box">Wergui SN vérifie la réception et active votre abonnement, en général le jour même. Vous n'avez rien d'autre à faire.</p>
+    <div class="row"><button class="btn" data-payannul="${att.id}">Annuler cette déclaration</button></div></section>`
+  : `<section class="panel" id="paypanel"><header><div><h2>Payer l'abonnement</h2><p>Envoyez le montant par Wave ou Orange Money, puis touchez « J'ai payé ». Wergui SN vérifie et active votre formule, en général le jour même.</p></div></header>
+    <div class="field"><label>Formule</label><div class="seg" role="group" aria-label="Formule">${FORMULES.map(f => `<button data-pform="${f.k}" aria-pressed="${S.payF === f.k}">${f.n}</button>`).join("")}</div></div>
+    <div class="field"><label>Durée</label><div class="seg" role="group" aria-label="Durée">${DUREES.map(([m, l]) => `<button data-pmois="${m}" aria-pressed="${S.payM === m}">${l}</button>`).join("")}</div></div>
+    <div class="total"><span>À payer</span><b class="num">${fmt(mt)}</b></div>${S.payM === 12 ? `<p class="muted" style="margin:0">Soit ${fmt(prixDe(S.payF, 1) * 2)} d'économie sur l'année.</p>` : ""}
+    ${moyens.length ? `<div class="field"><label>Moyen de paiement</label><div class="methods" role="group" aria-label="Moyen de paiement">${moyens.map(([m]) => `<button data-pmoy="${m}" aria-pressed="${S.payMoy === m}">${m}</button>`).join("")}</div></div>
+    <ol class="paysteps"><li>Dans votre application ${esc(S.payMoy)}, envoyez <b class="num">${fmt(mt)}</b> au <b class="num">${esc(num)}</b>${cfg.beneficiaire ? ` (${esc(cfg.beneficiaire)})` : ""}. <button class="btn sm" data-act="copynum">Copier le numéro</button></li>
+      <li>Notez l'identifiant de la transaction affiché par ${esc(S.payMoy)} (facultatif, mais cela accélère la vérification).<div class="field" style="margin-top:6px"><input id="payref" maxlength="80" autocomplete="off" placeholder="ex. T_AB12CD34…" aria-label="Identifiant de la transaction"></div></li>
+      <li>Touchez « J'ai payé ».</li></ol>
+    <div class="row"><button class="btn pri" data-act="jaipaye">J'ai payé ${fmt(mt)}</button></div>`
+    : `<p class="note-box">Le paiement en ligne sera bientôt disponible. En attendant, <a href="${contactLien(`Bonjour, je souhaite payer la formule ${(FORMULES.find(f => f.k === S.payF) || {}).n} (${S.payM === 12 ? "12 mois" : "1 mois"}, ${nb(mt)} F) pour ${p.nom}.`)}" target="_blank" rel="noopener">contactez Wergui SN</a>.</p>`}</section>`}
+  ${pays.length ? `<section class="panel"><header><div><h2>Historique des paiements</h2></div></header><div class="tw"><table><thead><tr><th>Date</th><th>Formule</th><th>Durée</th><th>Moyen</th><th>Statut</th><th class="r">Montant</th></tr></thead><tbody>
+    ${pays.map(x => `<tr><td class="num">${dfr(x.declare_le)}</td><td>${(FORMULES.find(f => f.k === x.formule) || {}).n}</td><td>${x.mois === 12 ? "12 mois" : "1 mois"}</td><td>${esc(x.moyen)}${x.reference ? `<small>réf. ${esc(x.reference)}</small>` : ""}</td><td>${STP[x.statut]}${x.periode_fin ? `<small>jusqu'au ${dfr(x.periode_fin)}</small>` : ""}${x.note && x.statut === "refuse" ? `<small>${esc(x.note)}</small>` : ""}</td><td class="r num">${fmt(x.montant)}</td></tr>`).join("")}</tbody></table></div></section>` : ""}
+  <p class="muted" style="font-size:.85rem">L'installation (inventaire de départ, paramétrage, formation) se règle à part, lors de la visite. Contact : ${esc(CFG.contactWhatsApp ? "WhatsApp +" + normPhone(CFG.contactWhatsApp) : CONTACT_MAIL)}.</p>`; };
 
 /* ================================================================ console Wergui SN (administrateurs) */
-V.console = () => { if (!S.adminList) { API.adminPharmacies().then(r => { S.adminList = r; if (S.view === "console") render(true); }).catch(e => toast(errMsg(e), true)); return head("Console Wergui SN", "Chargement…"); }
+V.console = () => { if (!S.adminList) { Promise.all([API.adminPharmacies(), API.adminPaiements(), API.config()]).then(([r, pays, cfg]) => { S.adminList = r; S.adminPays = pays; S.adminCfg = cfg || {}; S.adminPend = pays.filter(x => x.statut === "en_attente").length; if (S.view === "console") render(true); }).catch(e => toast(errMsg(e), true)); return head("Console Wergui SN", "Chargement…"); }
+  const PA = S.adminPays.filter(x => x.statut === "en_attente"), nomPh = id => (S.adminList.find(x => x.id === id) || { nom: "Pharmacie supprimée" }).nom, C = S.adminCfg;
   const L = S.adminList, actifs = L.filter(x => x.statut === "actif"), mrr = actifs.reduce((s, x) => s + (x.formule === "officine" ? 25000 : 15000), 0);
   return head("Console Wergui SN", "Réservée aux administrateurs. Abonnements des pharmacies : aucune donnée de stock ni de vente n'est visible ici.", `<button class="btn" data-act="consolerefresh">Actualiser</button>`) +
-  `<div class="kpis"><div class="kpi"><span>Pharmacies</span><b class="num">${L.length}</b><em>${L.filter(x => x.statut === "essai").length} en essai</em></div><div class="kpi"><span>Abonnées</span><b class="num">${actifs.length}</b><em>${actifs.filter(x => x.formule === "officine").length} Officine</em></div><div class="kpi"><span>Revenu mensuel</span><b class="num">${fmt(mrr)}</b><em>abonnements actifs</em></div><div class="kpi"><span>Suspendues</span><b class="num">${L.filter(x => x.statut === "suspendu").length}</b><em>&nbsp;</em></div></div>
+  `<div class="kpis"><div class="kpi"><span>Pharmacies</span><b class="num">${L.length}</b><em>${L.filter(x => x.statut === "essai").length} en essai</em></div><div class="kpi"><span>Abonnées</span><b class="num">${actifs.length}</b><em>${actifs.filter(x => x.formule === "officine").length} Officine</em></div><div class="kpi"><span>Revenu mensuel</span><b class="num">${fmt(mrr)}</b><em>abonnements actifs</em></div><div class="kpi"><span>Paiements à valider</span><b class="num">${PA.length}</b><em>${PA.length ? fmt(PA.reduce((s, x) => s + x.montant, 0)) : "aucun"}</em></div></div>
+  <section class="panel"><header><div><h2>Paiements à valider</h2><p>Vérifiez dans votre application Wave ou Orange Money que l'argent est bien arrivé avant de valider : l'abonnement est alors prolongé automatiquement.</p></div></header>
+  <div class="tw"><table><thead><tr><th>Déclaré le</th><th>Pharmacie</th><th>Formule</th><th>Moyen et référence</th><th class="r">Montant</th><th></th></tr></thead><tbody>
+  ${PA.map(x => `<tr><td class="num">${dfr(x.declare_le)} ${hm(x.declare_le)}</td><td><b>${esc(nomPh(x.pharmacy_id))}</b></td><td>${x.formule === "officine" ? "Officine" : "Petite officine"} · ${x.mois === 12 ? "12 mois" : "1 mois"}</td><td>${esc(x.moyen)}${x.reference ? `<small>réf. ${esc(x.reference)}</small>` : "<small>sans référence</small>"}</td><td class="r num"><b>${fmt(x.montant)}</b></td>
+    <td class="r"><div class="row" style="justify-content:flex-end;gap:6px"><button class="btn sm pri" data-padm="${x.id}|1">Argent reçu : valider</button><button class="btn sm" data-padm="${x.id}|0">Refuser</button></div></td></tr>`).join("") || '<tr><td colspan="6" class="empty">Aucun paiement en attente.</td></tr>'}</tbody></table></div></section>
+  <section class="panel"><header><div><h2>Numéros de paiement</h2><p>Affichés aux titulaires sur la page Abonnement. Laissez vide pour masquer un moyen de paiement.</p></div></header>
+  <div class="form"><div class="field"><label for="cfgwave">Numéro Wave</label><input id="cfgwave" type="tel" value="${esc(C.wave_numero || "")}" placeholder="77 000 00 00"></div>
+  <div class="field"><label for="cfgom">Numéro Orange Money</label><input id="cfgom" type="tel" value="${esc(C.om_numero || "")}" placeholder="77 000 00 00"></div>
+  <div class="field full"><label for="cfgben">Nom affiché du bénéficiaire</label><input id="cfgben" value="${esc(C.beneficiaire || "")}" placeholder="ex. Wergui SN"></div></div>
+  <div class="row"><button class="btn pri" data-act="cfgsave">Enregistrer les numéros</button></div></section>
   <section class="panel"><div class="tw"><table><thead><tr><th>Pharmacie</th><th>Titulaire</th><th>Activité</th><th>Formule</th><th>Statut</th><th>Payé jusqu'au</th><th></th></tr></thead><tbody>
   ${L.map(x => `<tr><td><b>${esc(x.nom)}</b><small>${esc(x.ville || "")} ${esc(x.telephone || "")} · inscrite le ${dfr(x.created_at)}${x.statut === "essai" ? " · essai jusqu'au " + dfr(x.essai_fin) : ""}</small></td><td>${esc(x.titulaire || "—")}</td><td><small style="color:var(--fg)">${x.membres} membres · ${x.produits} produits · ${x.ventes_30j} ventes/30 j</small></td>
   <td><select id="af-${x.id}">${["petite","officine"].map(f => `<option value="${f}" ${x.formule === f ? "selected" : ""}>${f === "officine" ? "Officine" : "Petite officine"}</option>`).join("")}</select></td>
@@ -769,6 +810,14 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.stab) { S.setTab = d.stab; return render(true); }
   if (d.posterm) { const p = POSTE.get(); delete p.users[d.posterm]; POSTE.set(p); render(true); return toast("Membre retiré du poste."); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
+  if (d.pform) { S.payF = d.pform; render(true); if (d.scroll) { const el = $("#paypanel"); el && el.scrollIntoView({ behavior: "smooth", block: "start" }); } return; }
+  if (d.pmois) { S.payM = +d.pmois; return render(true); }
+  if (d.pmoy) { S.payMoy = d.pmoy; return render(true); }
+  if (d.payannul) { if (!confirmerTexte("Annuler la déclaration de paiement ?")) return; return run(t, async () => { await API.annulerPaiement(d.payannul); S.abo = null; render(true); toast("Déclaration annulée."); }); }
+  if (d.padm) { const [id, ok] = d.padm.split("|"), x = S.adminPays.find(y => y.id === id); let note = null;
+    if (ok === "1" && !confirmerTexte(`Confirmer que ${fmt(x.montant)} sont bien arrivés ?`)) return;
+    if (ok === "0") { note = prompt("Motif du refus (visible par le titulaire) :", "Paiement non reçu"); if (note === null) return; }
+    return run(t, async () => { const fin = await API.adminTraiter(id, ok === "1", note); S.adminList = null; if (x.pharmacy_id === S.pid) D.ph = (await API.load(S.pid)).ph; render(true); toast(ok === "1" ? `Paiement validé : abonnement actif jusqu'au ${dfr(fin)}.` : "Paiement refusé."); }); }
   if (d.mkbord) return run(t, async () => { await API.creerBordereau(S.pid, d.mkbord); S.finTab = "assur"; await finReload(); toast(`Bordereau ${d.mkbord} créé : imprimez-le et envoyez-le.`); });
   if (d.bsend) return run(t, async () => { await API.majBordereau(d.bsend, iso(today()), null); await finReload(); toast("Bordereau marqué envoyé."); });
   if (d.bpay) return payModal("b", d.bpay);
@@ -817,6 +866,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "addfact") { const m = parseInt($("#fmontant").value) || 0; if (m <= 0) return toast("Indiquez le montant de la facture.", true);
     return run(t, async () => { await API.insert("factures", { pharmacy_id: S.pid, fournisseur_id: $("#ffour").value, numero: $("#fnum").value.trim() || null, montant: m, ...($("#fech").value ? { echeance: $("#fech").value } : {}) }); await finReload(); toast("Facture ajoutée."); }); }
   if (a === "exportfin") return exporterFinances(t);
+  if (a === "copynum") { const n = (S.payMoy === "Orange Money" ? S.abo.cfg.om_numero : S.abo.cfg.wave_numero) || ""; try { await navigator.clipboard.writeText(n.replace(/\s/g, "")); toast("Numéro copié."); } catch (e) { toast("Copie impossible : notez le numéro " + n, true); } return; }
+  if (a === "jaipaye") { const mt = prixDe(S.payF, S.payM); if (!confirmerTexte(`Confirmez-vous avoir envoyé ${fmt(mt)} par ${S.payMoy} ?`)) return;
+    return run(t, async () => { await API.declarerPaiement(S.pid, S.payF, S.payM, S.payMoy, ($("#payref") || {}).value); S.abo = null; render(true); toast("Merci ! Wergui SN vérifie la réception et active votre abonnement."); }); }
+  if (a === "cfgsave") return run(t, async () => { await API.adminConfig($("#cfgwave").value, $("#cfgom").value, $("#cfgben").value); S.adminCfg = await API.config(); render(true); toast("Numéros de paiement enregistrés."); });
   if (a === "vider") { S.cart = []; return render(true); }
   if (a === "toticket") return $("#ticket").scrollIntoView({ behavior: "smooth", block: "start" });
   if (a === "newprod") return editProd(null);

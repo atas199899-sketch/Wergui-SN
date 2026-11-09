@@ -304,3 +304,7 @@ input:not([type]),input[type=email],input[type=password]{border:1px solid var(--
 .pinpad .okp{background:var(--ink);color:var(--ink-fg);border-color:var(--ink);font-size:1.1rem}
 .pinpad .okp:disabled{opacity:.4;cursor:default}
 .pinpad.busy{opacity:.5;pointer-events:none}
+/* paiement de l'abonnement */
+.paysteps{margin:4px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+.paysteps li{line-height:1.5}
+.paysteps .btn.sm{margin-left:6px;vertical-align:middle}
