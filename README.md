@@ -1,6 +1,6 @@
 # Wergui SN – gestion de stock pour les pharmacies du Sénégal
 
-- Site en ligne : https://werguisn.pages.dev (et https://atas199899-sketch.github.io/Wergui-SN/).
+- Site en ligne : https://werguisn.pages.dev (l'ancienne adresse GitHub Pages redirige vers celle-ci ; elle sert encore la base des médicaments).
 - `index.html` : page d'accueil.
 - `app/` : l'application (inscription, connexion, stock, caisse, scanner, péremptions, commandes, inventaire, équipe, paramètres), reliée à Supabase.
 - `demo/` : démo cliquable, sans compte (données d'exemple).

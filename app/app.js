@@ -1,7 +1,7 @@
 /* Wergui SN — application reliée à Supabase (sans étape de compilation). */
 "use strict";
 const CFG = window.WERGUI_CONFIG || {};
-const APP_URL = location.origin + location.pathname;
+const APP_URL = CFG.appUrl || (location.origin + location.pathname); // toujours l'adresse officielle dans les liens envoyés
 
 /* ================================================================ outils */
 const $ = s => document.querySelector(s);

@@ -2,6 +2,7 @@
 // la sécurité des données repose sur les règles RLS de la base).
 window.WERGUI_CONFIG = {
   supabaseUrl: "https://bjkyezwiddvotikldbag.supabase.co",
+  appUrl: "https://werguisn.pages.dev/app/",   // adresse officielle : liens d'invitation et e-mails
   supabaseAnonKey: "sb_publishable_NBuIkxd_XVPniNYcNqAJ4w_ZllnGpBL",   // clé publique (publishable)
   medicamentsUrl: "https://atas199899-sketch.github.io/Wergui-SN/medicaments.json",
   contactEmail: "contact.werguisn@gmail.com",

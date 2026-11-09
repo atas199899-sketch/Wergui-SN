@@ -1,7 +1,7 @@
 /* Wergui SN : garde l'application sur l'appareil pour qu'elle s'ouvre même sans internet.
    Les données (Supabase) ne passent jamais par ce cache. */
-const VERSION = "wergui-12";
-const CORE = ["./", "./index.html", "./app.css?v=12", "./app.js?v=12", "./config.js",
+const VERSION = "wergui-13";
+const CORE = ["./", "./index.html", "./app.css?v=13", "./app.js?v=13", "./config.js",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"];
 
 self.addEventListener("install", e => {
