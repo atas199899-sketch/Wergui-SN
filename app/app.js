@@ -39,6 +39,11 @@ const API = {
   signUp: (email, password, data) => q(sb.auth.signUp({ email, password, options: { data, emailRedirectTo: APP_URL } })),
   signOut: () => sb.auth.signOut(),
   signOutLocal: () => sb.auth.signOut({ scope: "local" }),
+  invitations: p => q(sb.from("invitations").select("*").eq("pharmacy_id", p).order("cree_le", { ascending: false }).limit(50)),
+  creerInvitation: (p, nom, role, droits) => rpc("creer_invitation", { p, p_nom: nom, p_role: role, p_droits: droits }),
+  annulerInvitation: id => rpc("annuler_invitation", { p_id: id }),
+  voirInvitation: code => rpc("voir_invitation", { p_code: code }),
+  accepterInvitation: (code, nom) => rpc("accepter_invitation", { p_code: code, p_nom: nom }),
   config: () => q(sb.from("wergui_config").select("*").eq("id", 1).maybeSingle()),
   paiements: p => q(sb.from("paiements").select("*").eq("pharmacy_id", p).order("declare_le", { ascending: false }).limit(24)),
   declarerPaiement: (p, f, m, moyen, ref) => rpc("declarer_paiement", { p, p_formule: f, p_mois: m, p_moyen: moyen, p_reference: ref || null }),
@@ -298,13 +303,50 @@ window.addEventListener("offline", () => { S.offline = true; if (D) render(true)
 window.addEventListener("online", () => { if (!D) return; S.offline = false; render(true); synchroniser().then(() => reload(true)).catch(() => {}); });
 setInterval(() => { if (D && navigator.onLine !== false) synchroniser(); }, 30000);
 
+/* ================================================================ invitations par lien */
+const lienInvitation = code => APP_URL + "#invitation=" + code;
+const codeDansAdresse = () => { const m = /[#&]invitation=([A-Za-z0-9]{8,40})/.exec(location.hash); return m ? m[1] : null; };
+function invitationsPanel() { if (!S.invs) { Promise.all([API.invitations(S.pid), all("membres", b => b.eq("pharmacy_id", S.pid))]).then(([r, m]) => { S.invs = r; D.membres = m; if (S.view === "parametres" && S.setTab === "equipe") render(true); }).catch(() => { S.invs = []; }); return ""; }
+  const att = S.invs.filter(i => !i.utilisee_le && dj(i.expire_le) >= 0);
+  return att.length ? `<section class="panel"><header><div><h2>Invitations en attente</h2><p>Chaque lien ne sert qu'une fois et expire au bout de 7 jours.</p></div></header>
+    <div>${att.map(i => `<div class="set"><div class="grow"><b>${esc(i.nom || "Lien sans nom")}</b><small>${roleName(i.role)} · créé le ${dfr(i.cree_le)} · expire le ${dfr(i.expire_le)}</small></div><div class="row" style="gap:6px"><button class="btn sm" data-invshare="${esc(i.code)}">Renvoyer</button><button class="btn sm" data-invdel="${i.id}">Annuler</button></div></div>`).join("")}</div></section>` : ""; }
+function inviter() { const roles = ["vendeur", "adjoint", "stagiaire"];
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Inviter un membre"><div class="top"><div><h2>Inviter un membre</h2><p>Vous obtenez un lien à envoyer par WhatsApp. La personne l'ouvre, crée son compte et rejoint directement la pharmacie.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="field"><label for="ivnom">Son nom (facultatif)</label><input id="ivnom" maxlength="80" placeholder="ex. Moussa Diop" autocomplete="off"></div>
+  <div class="field"><label>Rôle</label><div class="seg" role="group" aria-label="Rôle">${roles.map((r, i) => `<button data-ivrole="${r}" aria-pressed="${i === 0}">${roleName(r)}</button>`).join("")}</div><small class="muted" id="ivdesc">${PERMS.filter(([k]) => ROLES.vendeur.perm.includes(k)).map(x => x[2]).join(" · ") || "Caisse, scanner et stock"}</small></div>
+  <p class="muted" style="font-size:.85rem">Vous pourrez ajuster ses droits ensuite, dans la liste de l'équipe.</p>
+  <div class="row"><button class="btn pri" data-act="invcreer">Créer le lien d'invitation</button><button class="btn" data-close="1">Annuler</button></div></div>`, true); }
+function partagerInvitation(code, nom, role) { const lien = lienInvitation(code), msg = `Bonjour${nom ? " " + nom : ""}, je vous invite à rejoindre l'équipe de ${D.ph.nom} sur Wergui SN${role ? " (" + roleName(role).toLowerCase() + ")" : ""}. Ouvrez ce lien et créez votre compte : ${lien}`;
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Lien d'invitation"><div class="top"><div><h2>Lien d'invitation prêt</h2><p>Envoyez-le à la personne. Il ne sert qu'une fois et expire dans 7 jours.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="field"><label for="ivlien">Lien</label><input id="ivlien" readonly value="${esc(lien)}" onfocus="this.select()"></div>
+  <div class="row"><a class="btn pri" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" style="text-decoration:none">Envoyer par WhatsApp</a><button class="btn" data-act="invcopier">Copier le message</button></div>
+  <p class="note-box">Quand la personne a rejoint, elle apparaît dans la liste de l'équipe.</p></div>`, true); S._invMsg = msg; }
+async function ecranInvitation(code, msg, err) { stopCam(); let inv = null; try { inv = await API.voirInvitation(code); } catch (e) { inv = { ok: false, raison: errMsg(e) }; }
+  const logo = `<div class="logo"><svg width="34" height="34" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="currentColor" opacity=".16"/><path d="M12 6h6v6h6v6h-6v6h-6v-6H6v-6h6z" fill="currentColor"/></svg><b>Wergui SN</b></div>`;
+  if (!inv.ok) { store.set("wergui.invitation", ""); $("#root").innerHTML = `<div class="auth"><div class="authcard">${logo}<h1>Invitation</h1><p class="err">${esc(inv.raison)}</p><button class="btn pri" data-auth="login">Aller à la connexion</button></div></div>`; return; }
+  $("#root").innerHTML = `<div class="auth"><div class="authcard">${logo}<h1>Rejoindre ${esc(inv.pharmacie)}</h1>
+    <p class="info">Vous êtes invité${inv.nom ? ` (${esc(inv.nom)})` : ""} comme <b>${esc(roleName(inv.role).toLowerCase())}</b> à ${esc(inv.pharmacie)}${inv.ville ? `, ${esc(inv.ville)}` : ""}. Créez votre compte : vous arrivez directement dans la pharmacie.</p>
+    ${err ? `<p class="err">${esc(err)}</p>` : ""}${msg ? `<p class="info">${esc(msg)}</p>` : ""}
+    <form data-form="invitation"><div class="field"><label for="in">Votre nom</label><input id="in" required autocomplete="name" value="${esc(inv.nom || "")}"></div>
+    <div class="field"><label for="ie">E-mail</label><input id="ie" type="email" required autocomplete="email"></div>
+    <div class="field"><label for="ip">Mot de passe (8 caractères minimum)</label><input id="ip" type="password" minlength="8" required autocomplete="new-password"></div>
+    <label class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;font-size:.88rem"><input type="checkbox" id="icgu" required style="width:20px;height:20px;flex:none"> <span>J'accepte les <a href="../conditions/" target="_blank">conditions d'utilisation</a> et la <a href="../confidentialite/" target="_blank">politique de confidentialité</a></span></label>
+    <button class="btn pri">Créer mon compte et rejoindre</button></form>
+    <button class="linkbtn" data-auth="login">J'ai déjà un compte Wergui SN : me connecter</button></div></div>`;
+  const i = $("#in"); i && (i.value ? $("#ie") : i).focus(); }
+// Après connexion : rejoint la pharmacie de l'invitation gardée (lien, ou mémorisée à l'inscription)
+async function accepterInvitationEnAttente() { const meta = (S.user && S.user.user_metadata) || {};
+  const code = store.get("wergui.invitation") || (meta.invitation && !store.get("wergui.inv.fait." + meta.invitation) ? meta.invitation : null); if (!code) return null;
+  try { const pid = await API.accepterInvitation(code, meta.nom || ""); store.set("wergui.invitation", ""); store.set("wergui.inv.fait." + code, "1"); return pid; }
+  catch (e) { if (estReseau(e)) throw e; store.set("wergui.invitation", ""); store.set("wergui.inv.fait." + code, "1"); S._invErr = errMsg(e); return null; } }
+
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
   stopCam();
   const f = { login: `<form data-form="login"><div class="field"><label for="ae">E-mail</label><input id="ae" type="email" autocomplete="email" required></div><div class="field"><label for="ap">Mot de passe</label><input id="ap" type="password" autocomplete="current-password" required></div><button class="btn pri">Se connecter</button></form>
       <div class="row" style="justify-content:space-between"><button class="linkbtn" data-auth="creer">Créer ma pharmacie</button><button class="linkbtn" data-auth="oubli">Mot de passe oublié ?</button></div><button class="linkbtn" data-auth="rejoindre">Je travaille dans une pharmacie déjà inscrite</button>`,
     creer: `<p class="muted">Créez le compte du pharmacien titulaire. Votre pharmacie est prête en 1 minute, en période d'essai gratuite.</p><form data-form="creer"><div class="field"><label for="cn">Votre nom</label><input id="cn" required placeholder="Dr Aïssatou Ndiaye" autocomplete="name"></div><div class="field"><label for="cph">Nom de la pharmacie</label><input id="cph" required placeholder="Pharmacie …"></div><div class="row"><div class="field" style="flex:1"><label for="cv">Ville</label><input id="cv" placeholder="Dakar"></div><div class="field" style="flex:1"><label for="ct">Téléphone</label><input id="ct" type="tel" placeholder="77 …"></div></div><div class="field"><label for="ce">E-mail</label><input id="ce" type="email" required autocomplete="email"></div><div class="field"><label for="cp">Mot de passe (8 caractères minimum)</label><input id="cp" type="password" minlength="8" required autocomplete="new-password"></div><label class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;font-size:.88rem"><input type="checkbox" id="ccgu" required style="width:20px;height:20px;flex:none"> <span>J'accepte les <a href="../conditions/" target="_blank">conditions d'utilisation</a> et la <a href="../confidentialite/" target="_blank">politique de confidentialité</a>.</span></label><button class="btn pri">Créer ma pharmacie</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
-    rejoindre: `<p class="muted">Créez votre compte personnel. Ensuite, donnez votre e-mail au pharmacien titulaire : il vous ajoute à l'équipe depuis ses paramètres.</p><form data-form="rejoindre"><div class="field"><label for="rn">Votre nom</label><input id="rn" required autocomplete="name"></div><div class="field"><label for="re">E-mail</label><input id="re" type="email" required autocomplete="email"></div><div class="field"><label for="rp">Mot de passe (8 caractères minimum)</label><input id="rp" type="password" minlength="8" required autocomplete="new-password"></div><label class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;font-size:.88rem"><input type="checkbox" id="rcgu" required style="width:20px;height:20px;flex:none"> <span>J'accepte les <a href="../conditions/" target="_blank">conditions d'utilisation</a> et la <a href="../confidentialite/" target="_blank">politique de confidentialité</a>.</span></label><button class="btn pri">Créer mon compte</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
+    rejoindre: `<p class="note-box"><b>Le plus simple :</b> demandez au titulaire de vous envoyer un lien d'invitation (Paramètres → Équipe → Inviter un membre) et ouvrez-le.</p><p class="muted">Sinon, créez votre compte ici, puis donnez votre e-mail au titulaire : il vous ajoute à l'équipe.</p><form data-form="rejoindre"><div class="field"><label for="rn">Votre nom</label><input id="rn" required autocomplete="name"></div><div class="field"><label for="re">E-mail</label><input id="re" type="email" required autocomplete="email"></div><div class="field"><label for="rp">Mot de passe (8 caractères minimum)</label><input id="rp" type="password" minlength="8" required autocomplete="new-password"></div><label class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;font-size:.88rem"><input type="checkbox" id="rcgu" required style="width:20px;height:20px;flex:none"> <span>J'accepte les <a href="../conditions/" target="_blank">conditions d'utilisation</a> et la <a href="../confidentialite/" target="_blank">politique de confidentialité</a>.</span></label><button class="btn pri">Créer mon compte</button></form><button class="linkbtn" data-auth="login">J'ai déjà un compte</button>`,
     oubli: `<p class="muted">Recevez un lien par e-mail pour choisir un nouveau mot de passe.</p><form data-form="oubli"><div class="field"><label for="oe">E-mail</label><input id="oe" type="email" required autocomplete="email"></div><button class="btn pri">Envoyer le lien</button></form><button class="linkbtn" data-auth="login">Retour à la connexion</button>`,
     nouveau: `<p class="muted">Choisissez votre nouveau mot de passe.</p><form data-form="nouveau"><div class="field"><label for="np">Nouveau mot de passe</label><input id="np" type="password" minlength="8" required autocomplete="new-password"></div><button class="btn pri">Enregistrer</button></form>` };
   const t = { login: "Connexion", creer: "Créer ma pharmacie", rejoindre: "Rejoindre une pharmacie", oubli: "Mot de passe oublié", nouveau: "Nouveau mot de passe" }[mode];
@@ -318,6 +360,9 @@ async function onForm(form) {
     if (k === "login") { store.set("wergui.verrou", ""); await API.signIn(v("ae"), document.getElementById("ap").value); await boot(); }
     else if (k === "creer") { const r = await API.signUp(v("ce"), document.getElementById("cp").value, { nom: v("cn"), intent: "creer", cgu_acceptees: new Date().toISOString(), pharmacie: { nom: v("cph"), ville: v("cv"), telephone: v("ct") } }); if (r.session) await boot(); else authScreen("login", "Compte créé. Ouvrez l'e-mail que nous venons d'envoyer et cliquez sur le lien pour l'activer, puis connectez-vous."); }
     else if (k === "rejoindre") { const r = await API.signUp(v("re"), document.getElementById("rp").value, { nom: v("rn"), intent: "rejoindre", cgu_acceptees: new Date().toISOString() }); if (r.session) await boot(); else authScreen("login", "Compte créé. Activez-le avec le lien reçu par e-mail, puis donnez votre e-mail au titulaire de la pharmacie."); }
+    else if (k === "invitation") { const code = store.get("wergui.invitation");
+      const r = await API.signUp(v("ie"), document.getElementById("ip").value, { nom: v("in"), intent: "rejoindre", invitation: code, cgu_acceptees: new Date().toISOString() });
+      if (r.session) await boot(); else ecranInvitation(code, "Compte créé. Ouvrez l'e-mail que nous venons de vous envoyer et cliquez sur le lien : vous arriverez directement dans la pharmacie."); }
     else if (k === "oubli") { await API.recover(v("oe")); authScreen("login", "Si un compte existe avec cet e-mail, vous allez recevoir un lien pour changer le mot de passe."); }
     else if (k === "nouveau") { await API.setPassword(document.getElementById("np").value); toast("Mot de passe changé."); await boot(); }
     else if (k === "pharma") { const id = await API.creerPharmacie(v("pn"), v("pv"), v("pt"), v("pt2") || (S.user.user_metadata || {}).nom || ""); S.pid = id; store.set("wergui.pid", id); await boot(); }
@@ -338,13 +383,16 @@ function pickPharmacy() {
 async function boot() {
   if (!sb) { $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><b>Wergui SN</b></div><h1>Bientôt disponible</h1><p class="muted">L'application est en cours de mise en service. En attendant, essayez la démo.</p><a class="btn pri" href="../demo/" style="text-align:center;text-decoration:none">Voir la démo</a></div></div>`; return; }
   let ses = null; try { ses = await API.session(); } catch (e) { if (!estReseau(e)) throw e; }
+  const invCode = codeDansAdresse(); if (invCode) { store.set("wergui.invitation", invCode); history.replaceState(null, "", location.pathname + location.search); }
   if (!ses && navigator.onLine === false) return bootHorsLigne();
+  if (!ses && store.get("wergui.invitation")) return ecranInvitation(store.get("wergui.invitation"));
   if (!ses) { authScreen(location.hash === "#creer" ? "creer" : location.hash === "#rejoindre" ? "rejoindre" : "login"); return; }
   if (posteOn() && store.get("wergui.verrou") === "1") { ecranVerrou(); return; }
   S.user = ses.user;
   try { return await bootEnLigne(); } catch (e) { if (estReseau(e)) return bootHorsLigne(); throw e; }
 }
 async function bootEnLigne() {
+  const invPid = await accepterInvitationEnAttente(); if (invPid) { S.pid = invPid; store.set("wergui.pid", invPid); S._invOk = true; }
   S.mems = await API.memberships(S.user.id);
   if (!S.mems.length) {
     const meta = S.user.user_metadata || {};
@@ -352,7 +400,7 @@ async function bootEnLigne() {
       store.set("wergui.created." + S.user.id, "1");
       try { const id = await API.creerPharmacie(meta.pharmacie.nom, meta.pharmacie.ville || "", meta.pharmacie.telephone || "", meta.nom || ""); S.pid = id; store.set("wergui.pid", id); return boot(); } catch (e) { toast(errMsg(e), true); }
     }
-    noPharmacy(); return;
+    noPharmacy(); if (S._invErr) { toast(S._invErr, true); S._invErr = null; } return;
   }
   S.phs = await API.pharmacies(S.mems.map(m => m.pharmacy_id));
   const last = S.pid || store.get("wergui.pid");
@@ -366,7 +414,7 @@ async function bootEnLigne() {
   D = await charger(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
   if (location.hash === "#console" && S.admin) S.view = "console";
   try { S.pinOk = await API.aUnPin(); } catch (e) { S.pinOk = false; }
-  shell(); render(); memoriser().catch(() => {}); sauverSnapshot(); majFile().then(synchroniser);
+  shell(); render(); if (S._invOk) { S._invOk = false; toast(`Bienvenue dans l'équipe de ${D.ph.nom} !`); } if (S._invErr) { toast(S._invErr, true); S._invErr = null; } memoriser().catch(() => {}); sauverSnapshot(); majFile().then(synchroniser);
 }
 function compte() {
   const m = me();
@@ -555,10 +603,11 @@ SET.pharmacie = () => { const p = D.ph; return `<section class="panel"><header><
   ${D.membres.filter(m => m.actif && m.user_id !== S.user.id).length ? `<div class="row"><select id="trto" style="flex:1 1 200px">${D.membres.filter(m => m.actif && m.user_id !== S.user.id).map(m => `<option value="${m.user_id}">${esc(m.nom)} · ${roleName(m.role)}</option>`).join("")}</select><button class="btn" data-act="transfert">Transférer</button></div>` : '<p class="muted">Ajoutez d\'abord un membre à l\'équipe.</p>'}</section>
   <section class="panel scanbad"><header><div><h2>Supprimer la pharmacie</h2><p>Supprime définitivement la pharmacie et toutes ses données : stock, ventes, commandes, équipe. Pensez à exporter vos données avant.</p></div></header>
   <div class="row"><input id="delphnom" placeholder="Tapez le nom exact : ${esc(p.nom)}" style="flex:1 1 220px" autocomplete="off"><button class="btn bad" data-act="delpharma">Supprimer la pharmacie</button></div></section>`; };
-SET.equipe = () => `<section class="panel"><header><div><h2>L'équipe</h2><p>Chaque membre a son compte et ses droits. Les ventes sont enregistrées au nom de la personne connectée.</p></div><button class="btn pri" data-member="">Ajouter un membre</button></header>
+SET.equipe = () => `<section class="panel"><header><div><h2>L'équipe</h2><p>Chaque membre a son compte et ses droits. Les ventes sont enregistrées au nom de la personne connectée.</p></div><div class="row"><button class="btn pri" data-act="inviter">Inviter un membre</button><button class="btn" data-member="">Ajouter par e-mail</button></div></header>
   <div>${D.membres.map(m => `<div class="member ${m.actif ? "" : "off"}"><span class="av">${esc(m.nom.replace(/^Dr\s+/, "").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase())}</span><div class="grow" style="flex:1;min-width:0"><b>${esc(m.nom)}</b>${m.user_id === S.user.id ? ' <span class="st ok">vous</span>' : ""}<small class="muted" style="display:block">${roleName(m.role)}${m.actif ? "" : " · désactivé"}</small><small class="muted" style="display:block">${m.role === "titulaire" ? "Accès complet, paramètres et abonnement" : PERMS.filter(([k]) => m.droits && m.droits[k]).map(x => x[2]).join(" · ") || "Caisse, scanner et stock uniquement"}</small></div><button class="btn sm" data-member="${m.user_id}">Modifier</button></div>`).join("")}</div></section>
   ${premium() ? "" : `<p class="note-box">Formule Petite officine : 1 membre en plus du titulaire, avec les droits du rôle choisi. <button class="linkbtn" data-go="abonnement">Passer à Officine</button> pour une équipe illimitée et des droits sur mesure.</p>`}
-  <p class="note-box">Pour ajouter quelqu'un : il crée d'abord son compte sur cette page (« Je travaille dans une pharmacie déjà inscrite »), puis vous l'ajoutez ici avec son e-mail.</p>`;
+  ${invitationsPanel()}
+  <p class="note-box">Le plus simple : « Inviter un membre » crée un lien à envoyer par WhatsApp. La personne l'ouvre, crée son compte et arrive directement dans la pharmacie. Si elle a déjà un compte Wergui SN, vous pouvez aussi l'ajouter avec son e-mail.</p>`;
 function member(uid) { const m = uid ? D.membres.find(x => x.user_id === uid) : { nom: "", role: "vendeur", droits: permOf("vendeur"), actif: true }, tit = m.role === "titulaire";
   layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="Membre"><div class="top"><div><h2>${uid ? "Modifier " + esc(m.nom) : "Ajouter un membre"}</h2><p>${tit ? "Titulaire : accès complet." : "Choisissez un rôle, puis ajustez les droits si besoin."}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
   <div class="form"><div class="field full"><label for="unom">Nom</label><input type="text" id="unom" value="${esc(m.nom)}"></div>${uid ? "" : `<div class="field full"><label for="uemail">E-mail de son compte Wergui SN</label><input type="email" id="uemail"></div>`}
@@ -877,7 +926,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.sortir) { const [id, type] = d.sortir.split("|"); return run(t, async () => { await API.sortirLot(id, type); await reload(true); toast(type === "retrait" ? "Lot retiré du stock et mis en destruction." : "Retour au grossiste enregistré."); }); }
   if (d.prio) { const l = D.lots.find(x => x.id === d.prio); return run(t, async () => { await API.priorite(l.id, !l.prioritaire); l.prioritaire = !l.prioritaire; render(true); toast(l.prioritaire ? "Ce lot sera proposé en premier au comptoir." : "Priorité retirée."); }); }
   if (d.smode) { S.scanMode = d.smode; document.querySelectorAll("[data-smode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.smode === S.scanMode)); return V_scanRes(); }
-  if (d.stab) { S.setTab = d.stab; return render(true); }
+  if (d.stab) { S.setTab = d.stab; if (d.stab === "equipe") S.invs = null; return render(true); }
+  if (d.ivrole) { document.querySelectorAll("[data-ivrole]").forEach(b => b.setAttribute("aria-pressed", b === t)); const dsc = $("#ivdesc"); if (dsc) dsc.textContent = PERMS.filter(([k]) => ROLES[d.ivrole].perm.includes(k)).map(x => x[2]).join(" · ") || "Caisse, scanner et stock uniquement"; return; }
+  if (d.invshare) { const i = (S.invs || []).find(x => x.code === d.invshare) || {}; return partagerInvitation(d.invshare, i.nom, i.role); }
+  if (d.invdel) { if (!confirmerTexte("Annuler cette invitation ?")) return; return run(t, async () => { await API.annulerInvitation(d.invdel); S.invs = null; render(true); toast("Invitation annulée : le lien ne fonctionne plus."); }); }
   if (d.posterm) { const p = POSTE.get(); delete p.users[d.posterm]; POSTE.set(p); render(true); return toast("Membre retiré du poste."); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
   if (d.fileretry || d.filedel) { const id = d.fileretry || d.filedel; if (d.filedel && !confirmerTexte("Supprimer définitivement cette vente de la file ?")) return;
@@ -912,6 +964,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "more") return more();
   if (a === "compte") return compte();
   if (a === "verrou") return verrouiller();
+  if (a === "inviter") return inviter();
+  if (a === "invcreer") { const role = (document.querySelector("[data-ivrole][aria-pressed=true]") || {}).dataset?.ivrole || "vendeur", nom = $("#ivnom").value.trim();
+    return run(t, async () => { const code = await API.creerInvitation(S.pid, nom, role, permOf(role)); S.invs = null; partagerInvitation(code, nom, role); render(true); }); }
+  if (a === "invcopier") { try { await navigator.clipboard.writeText(S._invMsg); toast("Message copié : collez-le dans WhatsApp ou par SMS."); } catch (e) { const i = $("#ivlien"); i && i.select(); toast("Copie impossible : sélectionnez le lien.", true); } return; }
   if (a === "logout" && S.pending && !confirmerTexte(`${pl(S.pending, "vente faite hors ligne n'est", "ventes faites hors ligne ne sont")} pas encore envoyée${S.pending > 1 ? "s" : ""}. Elles partiront à votre prochaine connexion sur cet appareil. Se déconnecter quand même ?`)) return;
   if (a === "logout" && S.user) { if (!S.pending) IDB.del(snapKey(S.user.id, S.pid)); }
   if (a === "syncnow") return run(t, synchroniser);

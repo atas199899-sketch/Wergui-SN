@@ -105,6 +105,38 @@ select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id
 select pg_temp.ok((select count(*) from produits where pharmacy_id=:'p')>=1,'abonnement suspendu : les données restent consultables');
 select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
 
+-- Invitations par lien
+reset role;
+insert into auth.users (id,email,raw_user_meta_data) values ('00000000-0000-0000-0000-00000000000e','awa@ex.sn','{"nom":"Awa Sarr"}');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.creer_invitation(%L,''X'',''vendeur'',''{}'')',:'p'),'seul le titulaire crée une invitation');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.creer_invitation(:'p','','vendeur','{"per":true}') as inv \gset
+select pg_temp.ok(length(:'inv')=16,'code d''invitation de 16 caractères');
+reset role; set role anon;
+select pg_temp.ok((public.voir_invitation(:'inv')->>'pharmacie')='Pharmacie Test','sans compte : on voit seulement la pharmacie et le rôle');
+select pg_temp.ok(not (public.voir_invitation('inconnu')->>'ok')::boolean,'code inconnu refusé');
+select pg_temp.echoue('select * from invitations','sans compte : liste des invitations illisible');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000e');
+select pg_temp.ok((select count(*) from invitations)=0,'un autre compte ne voit pas les invitations');
+select public.accepter_invitation(:'inv','');
+reset role;
+select pg_temp.ok((select nom='Awa Sarr' and role='vendeur' and (droits->>'per')::boolean from membres where user_id='00000000-0000-0000-0000-00000000000e'),'invitation acceptée : Awa rejoint l''équipe avec le rôle choisi');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue(format('select public.accepter_invitation(%L,'''')',:'inv'),'lien à usage unique');
+reset role;
+update invitations set expire_le = now() - interval '1 day', utilisee_le = null, utilisee_par = null where code = :'inv';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue(format('select public.accepter_invitation(%L,'''')',:'inv'),'lien expiré refusé');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.creer_invitation(:'p','Test','stagiaire','{}') as inv2 \gset
+select public.annuler_invitation((select id from invitations where code=:'inv2'));
+select pg_temp.ok(not (public.voir_invitation(:'inv2')->>'ok')::boolean,'invitation annulée');
+reset role;
+delete from membres where user_id='00000000-0000-0000-0000-00000000000e';
+
+
 -- Ventes hors ligne
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
 select sum(quantite) as st0 from lots where produit_id=:'prod' and peremption>=current_date \gset
