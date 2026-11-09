@@ -232,6 +232,7 @@ async function boot() {
   $("#root").innerHTML = `<div class="loading"><div><div class="spin"></div>Chargement de la pharmacie…</div></div>`;
   try { S.admin = await API.suisAdmin(); } catch (e) { S.admin = false; }
   D = await API.load(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
+  if (location.hash === "#console" && S.admin) S.view = "console";
   shell(); render();
 }
 function compte() {
