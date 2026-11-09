@@ -191,6 +191,9 @@ select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
 select pg_temp.echoue('select public.admin_config(''77 000 00 00'','''','''',''https://pirate.example/pay'')','lien de paiement non Wave refusé');
 select public.admin_config('77 000 00 00','','Wergui SN','https://pay.wave.com/m/M_sn_TEST/c/sn/');
 select pg_temp.ok((select wave_numero from wergui_config)='77 000 00 00','numéro Wave réglé par l''administrateur');
+select pg_temp.echoue('select public.admin_config_om(''https://faux.example/mp/x'',''1234'','''')','lien Orange Money non officiel refusé');
+select public.admin_config_om('https://sugu.orange-sonatel.com/mp/TEST123','78 85 97 45','Test');
+select pg_temp.ok((select om_code from wergui_config)='78 85 97 45','lien et code Orange Money enregistrés');
 select public.admin_traiter_paiement(:'pay',true,'Reçu') as fin \gset
 reset role;
 select pg_temp.ok((select statut='actif' and formule='officine' and paye_jusqu=(current_date + interval '12 months')::date from pharmacies where id=:'p2'),'validation : Officine active pour 12 mois');

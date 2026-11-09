@@ -308,3 +308,6 @@ input:not([type]),input[type=email],input[type=password]{border:1px solid var(--
 .paysteps{margin:4px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:10px}
 .paysteps li{line-height:1.5}
 .paysteps .btn.sm{margin-left:6px;vertical-align:middle}
+.payqr{width:168px;margin-top:8px;padding:6px;background:#fff;border-radius:10px;border:1px solid var(--line)}
+.payqr svg{display:block;width:100%;height:auto}
+@media (max-width:760px){.payqrli{display:none}}
