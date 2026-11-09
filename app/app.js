@@ -45,7 +45,7 @@ const API = {
   annulerPaiement: id => rpc("annuler_paiement", { p_id: id }),
   adminPaiements: () => q(sb.from("paiements").select("*").order("declare_le", { ascending: false }).limit(100)),
   adminTraiter: (id, ok, note) => rpc("admin_traiter_paiement", { p_id: id, p_ok: ok, p_note: note || null }),
-  adminConfig: (w, om, b) => rpc("admin_config", { p_wave: w, p_om: om, p_beneficiaire: b }),
+  adminConfig: (w, om, b, lien) => rpc("admin_config", { p_wave: w, p_om: om, p_beneficiaire: b, p_wave_lien: lien }),
   definirPin: pin => rpc("definir_pin", { p_pin: pin }),
   aUnPin: () => rpc("a_un_pin", {}),
   recover: email => q(sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL })),
@@ -527,12 +527,13 @@ async function saveReglages(patch) { const reglages = Object.assign({}, R(), pat
 const FORMULES = [
   { k: "petite", n: "Petite officine", prix: 15000, inst: 35000, items: ["Toutes les fonctions de base : stock par lot, alertes de péremption, scanner, caisse, commandes, inventaire", "1 membre en plus du titulaire", "Jusqu'à 1 500 références"] },
   { k: "officine", n: "Officine", prix: 25000, inst: 50000, items: ["Tout ce qui est dans Petite officine", "Tiers payant : IPM, mutuelles, CMU", "Finances : clôture de caisse, bordereaux d'assurance, factures grossistes, dépenses, résultat du mois et export comptable", "Équipe illimitée et droits sur mesure", "Références illimitées"] }];
+const lienWave = (base, mt) => base.replace(/\/?$/, "/") + "?amount=" + mt;
 const DUREES = [[1, "1 mois"], [12, "12 mois · 2 mois offerts"]];
 const prixDe = (f, m) => (FORMULES.find(x => x.k === f) || FORMULES[0]).prix * (m === 12 ? 10 : 1);
 const STP = { en_attente: '<span class="st warn">En vérification</span>', valide: '<span class="st ok">Validé</span>', refuse: '<span class="st bad">Refusé</span>' };
 V.abonnement = () => { const p = D.ph, r = essaiReste(), cur = FORMULES.find(f => f.k === p.formule);
   if (!S.abo) { Promise.all([API.config(), API.paiements(S.pid), q(sb.from("pharmacies").select("*").eq("id", S.pid).single())]).then(([cfg, pays, ph]) => { S.abo = { cfg: cfg || {}, pays }; D.ph = ph; nav(); if (S.view === "abonnement") render(true); }).catch(e => toast(errMsg(e), true)); return head("Abonnement", "Chargement…"); }
-  const { cfg, pays } = S.abo, att = pays.find(x => x.statut === "en_attente"), moyens = [["Wave", cfg.wave_numero], ["Orange Money", cfg.om_numero]].filter(x => x[1]);
+  const { cfg, pays } = S.abo, att = pays.find(x => x.statut === "en_attente"), moyens = [["Wave", cfg.wave_numero || cfg.wave_lien], ["Orange Money", cfg.om_numero]].filter(x => x[1]);
   if (!S.payF) S.payF = p.statut === "essai" ? "officine" : p.formule; if (!S.payM) S.payM = 1; if (!moyens.some(x => x[0] === S.payMoy)) S.payMoy = (moyens[0] || [])[0];
   const num = (moyens.find(x => x[0] === S.payMoy) || [])[1], mt = prixDe(S.payF, S.payM);
   const etat = p.statut === "suspendu" ? '<span class="st bad">Suspendu</span>' : p.statut === "essai" ? `<span class="st acc">Essai${r != null ? (r >= 0 ? " · " + pl(r, "jour restant", "jours restants") : " terminé") : ""}</span>` : '<span class="st ok">Actif</span>';
@@ -548,7 +549,8 @@ V.abonnement = () => { const p = D.ph, r = essaiReste(), cur = FORMULES.find(f =
     <div class="field"><label>Durée</label><div class="seg" role="group" aria-label="Durée">${DUREES.map(([m, l]) => `<button data-pmois="${m}" aria-pressed="${S.payM === m}">${l}</button>`).join("")}</div></div>
     <div class="total"><span>À payer</span><b class="num">${fmt(mt)}</b></div>${S.payM === 12 ? `<p class="muted" style="margin:0">Soit ${fmt(prixDe(S.payF, 1) * 2)} d'économie sur l'année.</p>` : ""}
     ${moyens.length ? `<div class="field"><label>Moyen de paiement</label><div class="methods" role="group" aria-label="Moyen de paiement">${moyens.map(([m]) => `<button data-pmoy="${m}" aria-pressed="${S.payMoy === m}">${m}</button>`).join("")}</div></div>
-    <ol class="paysteps"><li>Dans votre application ${esc(S.payMoy)}, envoyez <b class="num">${fmt(mt)}</b> au <b class="num">${esc(num)}</b>${cfg.beneficiaire ? ` (${esc(cfg.beneficiaire)})` : ""}. <button class="btn sm" data-act="copynum">Copier le numéro</button></li>
+    <ol class="paysteps">${S.payMoy === "Wave" && cfg.wave_lien ? `<li>Touchez le bouton ci-dessous : Wave s'ouvre avec le montant de <b class="num">${fmt(mt)}</b>${cfg.beneficiaire ? ` pour ${esc(cfg.beneficiaire)}` : ""}. Validez le paiement dans Wave.<div class="row" style="margin-top:8px"><a class="btn pri" id="wavebtn" href="${esc(lienWave(cfg.wave_lien, mt))}" target="_blank" rel="noopener" style="text-decoration:none">Payer ${fmt(mt)} avec Wave</a></div>${cfg.wave_numero ? `<small class="muted">Ou envoyez le montant au ${esc(cfg.wave_numero)} <button class="btn sm" data-act="copynum">Copier le numéro</button></small>` : ""}</li>`
+      : `<li>Dans votre application ${esc(S.payMoy)}, envoyez <b class="num">${fmt(mt)}</b> au <b class="num">${esc(num)}</b>${cfg.beneficiaire ? ` (${esc(cfg.beneficiaire)})` : ""}. <button class="btn sm" data-act="copynum">Copier le numéro</button></li>`}
       <li>Notez l'identifiant de la transaction affiché par ${esc(S.payMoy)} (facultatif, mais cela accélère la vérification).<div class="field" style="margin-top:6px"><input id="payref" maxlength="80" autocomplete="off" placeholder="ex. T_AB12CD34…" aria-label="Identifiant de la transaction"></div></li>
       <li>Touchez « J'ai payé ».</li></ol>
     <div class="row"><button class="btn pri" data-act="jaipaye">J'ai payé ${fmt(mt)}</button></div>`
@@ -570,6 +572,7 @@ V.console = () => { if (!S.adminList) { Promise.all([API.adminPharmacies(), API.
   <section class="panel"><header><div><h2>Numéros de paiement</h2><p>Affichés aux titulaires sur la page Abonnement. Laissez vide pour masquer un moyen de paiement.</p></div></header>
   <div class="form"><div class="field"><label for="cfgwave">Numéro Wave</label><input id="cfgwave" type="tel" value="${esc(C.wave_numero || "")}" placeholder="77 000 00 00"></div>
   <div class="field"><label for="cfgom">Numéro Orange Money</label><input id="cfgom" type="tel" value="${esc(C.om_numero || "")}" placeholder="77 000 00 00"></div>
+  <div class="field full"><label for="cfglien">Lien de paiement Wave (marchand)</label><input id="cfglien" type="url" value="${esc(C.wave_lien || "")}" placeholder="https://pay.wave.com/m/…"><small class="muted">Le montant est ajouté automatiquement : le client n'a qu'à valider dans Wave.</small></div>
   <div class="field full"><label for="cfgben">Nom affiché du bénéficiaire</label><input id="cfgben" value="${esc(C.beneficiaire || "")}" placeholder="ex. Wergui SN"></div></div>
   <div class="row"><button class="btn pri" data-act="cfgsave">Enregistrer les numéros</button></div></section>
   <section class="panel"><div class="tw"><table><thead><tr><th>Pharmacie</th><th>Titulaire</th><th>Activité</th><th>Formule</th><th>Statut</th><th>Payé jusqu'au</th><th></th></tr></thead><tbody>
@@ -869,7 +872,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "copynum") { const n = (S.payMoy === "Orange Money" ? S.abo.cfg.om_numero : S.abo.cfg.wave_numero) || ""; try { await navigator.clipboard.writeText(n.replace(/\s/g, "")); toast("Numéro copié."); } catch (e) { toast("Copie impossible : notez le numéro " + n, true); } return; }
   if (a === "jaipaye") { const mt = prixDe(S.payF, S.payM); if (!confirmerTexte(`Confirmez-vous avoir envoyé ${fmt(mt)} par ${S.payMoy} ?`)) return;
     return run(t, async () => { await API.declarerPaiement(S.pid, S.payF, S.payM, S.payMoy, ($("#payref") || {}).value); S.abo = null; render(true); toast("Merci ! Wergui SN vérifie la réception et active votre abonnement."); }); }
-  if (a === "cfgsave") return run(t, async () => { await API.adminConfig($("#cfgwave").value, $("#cfgom").value, $("#cfgben").value); S.adminCfg = await API.config(); render(true); toast("Numéros de paiement enregistrés."); });
+  if (a === "cfgsave") return run(t, async () => { await API.adminConfig($("#cfgwave").value, $("#cfgom").value, $("#cfgben").value, $("#cfglien").value); S.adminCfg = await API.config(); render(true); toast("Numéros de paiement enregistrés."); });
   if (a === "vider") { S.cart = []; return render(true); }
   if (a === "toticket") return $("#ticket").scrollIntoView({ behavior: "smooth", block: "start" });
   if (a === "newprod") return editProd(null);

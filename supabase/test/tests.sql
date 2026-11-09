@@ -177,7 +177,7 @@ reset role;
 
 -- Paiement de l'abonnement (version manuelle)
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
-select pg_temp.echoue('select public.admin_config(''770000000'','''','''')','seul un administrateur règle les numéros');
+select pg_temp.echoue('select public.admin_config(''770000000'','''','''',null)','seul un administrateur règle les numéros');
 select pg_temp.echoue(format('select public.declarer_paiement(%L,''officine'',1,''Wave'',null)',:'p'),'impossible de déclarer pour la pharmacie d''un autre');
 select public.declarer_paiement(:'p2','officine',12,'Wave','TX-123') as pay \gset
 select pg_temp.ok((select montant from paiements where id=:'pay')=250000,'montant calculé en base (12 mois = 10 x 25 000 F)');
@@ -188,7 +188,8 @@ select pg_temp.ok((select count(*) from paiements)=1,'le titulaire voit ses paie
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
 select pg_temp.ok((select count(*) from paiements)=0,'un vendeur ne voit pas les paiements des autres');
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
-select public.admin_config('77 000 00 00','','Wergui SN');
+select pg_temp.echoue('select public.admin_config(''77 000 00 00'','''','''',''https://pirate.example/pay'')','lien de paiement non Wave refusé');
+select public.admin_config('77 000 00 00','','Wergui SN','https://pay.wave.com/m/M_sn_TEST/c/sn/');
 select pg_temp.ok((select wave_numero from wergui_config)='77 000 00 00','numéro Wave réglé par l''administrateur');
 select public.admin_traiter_paiement(:'pay',true,'Reçu') as fin \gset
 reset role;

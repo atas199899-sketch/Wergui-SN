@@ -9,7 +9,7 @@
 
 ## Mise en service
 
-1. Créer un projet Supabase et exécuter dans l'ordre les fichiers `supabase/migrations/001_init.sql` à `007_paiements.sql` (SQL Editor ou API).
+1. Créer un projet Supabase et exécuter dans l'ordre les fichiers `supabase/migrations/001_init.sql` à `008_lien_wave.sql` (SQL Editor ou API).
 2. Renseigner `app/config.js` avec l'URL du projet et la clé « anon public ».
 3. Dans Supabase → Authentication → URL Configuration, mettre l'adresse du site (`…/Wergui-SN/app/`) comme Site URL et URL de redirection.
 
