@@ -1,0 +1,215 @@
+# rayon | nom | présentation | prix de vente (F) | ventes par jour | motif dans la base BDPM (facultatif)
+A|Coartem 20/120 mg|boîte de 24 comprimés|3900|3.5|
+A|Artequin adulte|boîte de 3 jours|4500|0.8|
+A|Malarone 250/100 mg|boîte de 12 comprimés|17500|0.4|^MALARONE
+A|Atovaquone/Proguanil Biogaran|boîte de 12 comprimés|12500|0.3|^ATOVAQUONE.*PROGUANIL BIOGARAN
+A|Arsucam adulte|boîte de 6 comprimés|2900|1.2|
+A|Coartem dispersible 20/120 mg|boîte de 6 comprimés|1900|1.5|
+A|Quinine Lafran 500 mg|boîte de 10 comprimés|2400|0.5|
+A|Fansidar|boîte de 3 comprimés|1100|0.3|
+A|Artesunate injectable 60 mg|1 flacon|3500|0.4|
+A|Duo-Cotecxin|boîte de 8 comprimés|3200|0.9|
+A|Lariam 250 mg|boîte de 8 comprimés|15600|0.1|^LARIAM
+A|Savarine|boîte de 28 comprimés|9800|0.2|
+B|Amoxicilline 500 mg Biogaran|boîte de 12 gélules|1500|3.2|^AMOXICILLINE BIOGARAN 500 mg
+B|Amoxicilline 1 g Arrow|boîte de 6 comprimés|1900|2.1|^AMOXICILLINE ARROW 1 g
+B|Augmentin 1 g/125 mg|boîte de 8 sachets|6200|1.4|^AUGMENTIN 1 g/125 mg
+B|Augmentin 500 mg/62,5 mg adulte|boîte de 12 sachets|5400|0.9|^AUGMENTIN 500 mg/62 :: comprimé
+B|Amoxicilline/Acide clavulanique Sandoz 1 g|boîte de 8 comprimés|4500|1.1|^AMOXICILLINE/ACIDE CLAVULANIQUE SANDOZ 1 g
+B|Clamoxyl 250 mg/5 ml sirop|flacon de 60 ml|1900|1.0|^CLAMOXYL 250
+B|Flagyl 500 mg|boîte de 14 comprimés|2100|2.0|^FLAGYL 500
+B|Flagyl 125 mg/5 ml suspension|flacon de 120 ml|1800|0.8|^FLAGYL .*:: suspension buvable
+B|Métronidazole 250 mg|boîte de 20 comprimés|900|1.2|
+B|Ciprofloxacine 500 mg Biogaran|boîte de 10 comprimés|2600|1.0|^CIPROFLOXACINE BIOGARAN 500
+B|Ciflox 500 mg|boîte de 10 comprimés|5900|0.3|^CIFLOX 500
+B|Bactrim forte|boîte de 10 comprimés|1600|0.9|^BACTRIM FORTE
+B|Cotrimoxazole 480 mg|boîte de 20 comprimés|700|1.1|
+B|Zithromax 250 mg|boîte de 6 comprimés|6500|0.5|^ZITHROMAX 250
+B|Azithromycine 250 mg Biogaran|boîte de 6 comprimés|3400|0.7|^AZITHROMYCINE BIOGARAN 250
+B|Oroken 200 mg|boîte de 8 comprimés|8900|0.3|^OROKEN 200
+B|Doxycycline 100 mg|boîte de 10 comprimés|1300|0.9|^DOXYCYCLINE BIOGARAN 100
+B|Erythromycine 500 mg|boîte de 20 comprimés|3200|0.4|
+B|Ceftriaxone 1 g injectable|1 flacon + solvant|2800|0.8|^CEFTRIAXONE SANDOZ 1 g
+B|Gentamicine 80 mg injectable|1 ampoule|600|0.6|
+B|Fluconazole 150 mg|1 gélule|1500|0.7|^FLUCONAZOLE .*150 mg :: gélule
+B|Mycostatine suspension buvable|flacon de 24 ml|3100|0.3|^MYCOSTATINE
+B|Pévaryl crème 1 %|tube de 30 g|3400|0.5|^PEVARYL 1 %
+B|Daktarin gel buccal|tube de 40 g|3900|0.3|^DAKTARIN 2 %
+C|Doliprane 1000 mg|boîte de 8 comprimés|1250|6.0|^DOLIPRANE 1000 mg :: comprimé$
+C|Doliprane 500 mg|boîte de 16 comprimés|1100|3.0|^DOLIPRANE 500 mg :: comprimé$
+C|Doliprane 2,4 % sirop enfant|flacon de 100 ml|1700|1.6|^DOLIPRANE 2 :: suspension buvable
+C|Efferalgan 1 g effervescent|boîte de 8 comprimés|1400|3.4|^EFFERALGAN 1000 mg :: comprimé effervescent
+C|Efferalgan 500 mg effervescent|boîte de 16 comprimés|1300|1.8|^EFFERALGAN 500 mg :: comprimé effervescent
+C|Dafalgan 1 g|boîte de 8 comprimés|1350|1.2|^DAFALGAN 1
+C|Paracétamol 500 mg|boîte de 20 comprimés|400|4.5|
+C|Paracétamol 1 g Biogaran|boîte de 8 comprimés|900|2.0|^PARACETAMOL BIOGARAN 1 g :: comprimé$
+C|Perfalgan 1 g injectable|flacon de 100 ml|2900|0.3|
+C|Advil 400 mg|boîte de 14 comprimés|2300|1.4|^ADVIL 400
+C|Ibuprofène 400 mg Biogaran|boîte de 30 comprimés|1600|2.2|^IBUPROFENE BIOGARAN 400
+C|Nurofen enfant 20 mg/ml|flacon de 150 ml|3200|0.7|^NUROFENPRO 20
+C|Diclofénac 50 mg|boîte de 30 comprimés|900|2.0|
+C|Voltarène 75 mg injectable|boîte de 2 ampoules|1700|0.5|^VOLTARENE 75
+C|Voltarène Emulgel 1 %|tube de 50 g|3700|1.0|^VOLTARENACTIGO 1 % :: gel
+C|Profénid 100 mg|boîte de 30 comprimés|4800|0.4|^PROFENID 100
+C|Tramadol 50 mg|boîte de 30 gélules|3200|0.5|^TRAMADOL BIOGARAN 50
+C|Ixprim 37,5/325 mg|boîte de 20 comprimés|4900|0.4|^IXPRIM
+C|Spasfon Lyoc 80 mg|boîte de 10 lyophilisats|2500|1.8|^SPASFON LYOC 80
+C|Spasfon 80 mg|boîte de 30 comprimés|2900|1.5|^SPASFON :: comprimé enrobé
+C|Aspirine du Rhône 500 mg|boîte de 20 comprimés|1300|0.6|^ASPIRINE DU RHONE 500
+C|Kardégic 75 mg|boîte de 30 sachets|2100|1.0|^KARDEGIC 75
+C|Colchicine 1 mg|boîte de 15 comprimés|2400|0.2|^COLCHICINE OPOCALCIUM
+C|Céleste (bétaméthasone) 2 mg|boîte de 20 comprimés|1900|0.6|^CELESTENE 2 mg
+C|Prednisolone 20 mg|boîte de 20 comprimés|2200|0.7|^PREDNISOLONE BIOGARAN 20
+C|Dexaméthasone 4 mg injectable|1 ampoule|700|0.6|
+M|Metformine 850 mg Biogaran|boîte de 30 comprimés|2100|1.9|^METFORMINE .*850 mg :: comprimé
+M|Metformine 1000 mg|boîte de 30 comprimés|2600|1.3|^METFORMINE BIOGARAN 1000
+M|Glucophage 850 mg|boîte de 30 comprimés|2900|0.8|^GLUCOPHAGE 850
+M|Diamicron 60 mg|boîte de 30 comprimés|6300|0.7|^DIAMICRON 60
+M|Glibenclamide 5 mg|boîte de 30 comprimés|1100|0.6|
+M|Amarel 2 mg|boîte de 30 comprimés|5200|0.4|^AMAREL 2
+M|Amlodipine 5 mg Biogaran|boîte de 30 gélules|2300|2.1|^AMLODIPINE BIOGARAN 5
+M|Amlodipine 10 mg Biogaran|boîte de 30 gélules|2800|1.2|^AMLODIPINE BIOGARAN 10
+M|Amlor 5 mg|boîte de 30 gélules|4500|0.6|^AMLOR 5
+M|Captopril 25 mg|boîte de 30 comprimés|1400|0.8|^CAPTOPRIL BIOGARAN 25
+M|Lisinopril 10 mg|boîte de 28 comprimés|2700|0.5|^LISINOPRIL .*10 mg
+M|Coversyl 5 mg|boîte de 30 comprimés|6900|0.5|^COVERSYL 5
+M|Périndopril 4 mg Biogaran|boîte de 30 comprimés|3400|0.6|^PERINDOPRIL BIOGARAN 4
+M|Losartan 50 mg Biogaran|boîte de 30 comprimés|3600|0.7|^LOSARTAN BIOGARAN 50
+M|Cozaar 50 mg|boîte de 28 comprimés|7400|0.3|^COZAAR 50
+M|Hydrochlorothiazide 25 mg|boîte de 30 comprimés|1200|0.6|^HYDROCHLOROTHIAZIDE
+M|Lasilix 40 mg|boîte de 30 comprimés|1500|0.7|^LASILIX 40
+M|Aldactone 25 mg|boîte de 30 comprimés|3900|0.2|^ALDACTONE 25
+M|Aténolol 50 mg|boîte de 30 comprimés|1700|0.5|^ATENOLOL BIOGARAN 50
+M|Nifédipine LP 20 mg|boîte de 30 comprimés|2600|0.5|
+M|Loxen LP 50 mg|boîte de 56 gélules|8200|0.2|^LOXEN
+M|Atorvastatine 20 mg Biogaran|boîte de 30 comprimés|4200|0.6|^ATORVASTATINE BIOGARAN 20
+M|Tahor 10 mg|boîte de 28 comprimés|9500|0.2|^TAHOR 10
+M|Simvastatine 20 mg|boîte de 28 comprimés|2900|0.4|^SIMVASTATINE BIOGARAN 20
+M|Lévothyrox 100 µg|boîte de 30 comprimés|1900|0.4|^LEVOTHYROX 100
+M|Insuline Actrapid 100 UI/ml|flacon de 10 ml|7900|0.3|
+M|Insuline Mixtard 30|flacon de 10 ml|8200|0.3|
+M|Lantus Solostar 100 U/ml|boîte de 5 stylos|39000|0.1|^LANTUS
+M|Bandelettes glycémie Accu-Chek|boîte de 50|14500|0.3|
+M|Dépakine 500 mg|boîte de 30 comprimés|5600|0.2|^DEPAKINE 500
+M|Tégrétol 200 mg|boîte de 50 comprimés|4600|0.2|^TEGRETOL 200
+M|Gardénal 100 mg|boîte de 20 comprimés|900|0.2|^GARDENAL 100
+D|Smecta|boîte de 30 sachets|3800|1.8|^SMECTA 3 g
+D|Smecta enfant (fraise)|boîte de 12 sachets|1900|1.0|
+D|Maalox|boîte de 40 comprimés|3100|1.2|^MAALOX MAUX D'ESTOMAC
+D|Gaviscon suspension|flacon de 250 ml|3600|1.0|^GAVISCON :: suspension buvable$
+D|Gaviscon sachets|boîte de 24 sachets|3900|0.8|
+D|Oméprazole 20 mg Biogaran|boîte de 28 gélules|3200|1.6|^OMEPRAZOLE BIOGARAN 20
+D|Ésoméprazole 40 mg|boîte de 28 gélules|5900|0.7|^ESOMEPRAZOLE BIOGARAN 40
+D|Mopral 20 mg|boîte de 28 gélules|7900|0.3|^MOPRAL 20
+D|Ranitidine 150 mg|boîte de 30 comprimés|1600|0.4|
+D|Motilium 10 mg|boîte de 40 comprimés|3100|0.8|^MOTILIUM 10
+D|Primpéran 10 mg|boîte de 40 comprimés|2100|0.7|^PRIMPERAN 10
+D|Vogalène Lyoc 7,5 mg|boîte de 16 lyophilisats|3300|0.4|^VOGALENE LYOC
+D|Imodium 2 mg|boîte de 12 gélules|2600|0.9|^IMODIUM 2
+D|Lopéramide 2 mg|boîte de 20 gélules|1200|1.0|^LOPERAMIDE BIOGARAN 2
+D|Tiorfan 100 mg|boîte de 20 gélules|4900|0.5|^TIORFAN 100
+D|SRO (sels de réhydratation)|boîte de 10 sachets|900|1.5|
+D|Duphalac 10 g|boîte de 20 sachets|3100|0.6|^DUPHALAC 10
+D|Forlax 10 g|boîte de 20 sachets|3700|0.5|^FORLAX 10
+D|Débridat 100 mg|boîte de 30 comprimés|3500|0.6|^DEBRIDAT 100
+D|Carbolevure|boîte de 30 gélules|2900|0.5|^CARBOLEVURE
+D|Ultra-Levure 200 mg|boîte de 10 gélules|3300|0.6|^ULTRA-LEVURE 200
+D|Albendazole 400 mg|1 comprimé|500|2.2|
+D|Zentel 400 mg|1 comprimé|1200|1.0|^ZENTEL 400
+D|Vermox 100 mg|boîte de 6 comprimés|1500|0.6|
+D|Fluvermal 100 mg|boîte de 6 comprimés|1900|0.5|^FLUVERMAL :: comprimé
+P|Doliprane 100 mg suppositoire|boîte de 10|1300|0.6|^DOLIPRANE 100 mg :: suppositoire
+P|Doliprane 150 mg suppositoire|boîte de 10|1300|0.6|^DOLIPRANE 150 mg :: suppositoire
+P|Efferalgan pédiatrique 3 %|flacon de 90 ml|1900|1.0|^EFFERALGAN PEDIATRIQUE 30
+P|Amoxicilline 125 mg/5 ml suspension|flacon de 60 ml|1300|1.2|^AMOXICILLINE BIOGARAN 125
+P|Amoxicilline 250 mg/5 ml suspension|flacon de 60 ml|1500|1.4|^AMOXICILLINE BIOGARAN 250
+P|Augmentin enfant 100 mg/12,5 mg/ml|flacon de 60 ml|4600|0.6|^AUGMENTIN 100 mg/12
+P|Zinc 20 mg (diarrhée enfant)|boîte de 10 comprimés|700|1.0|
+P|Toplexil sirop|flacon de 150 ml|2500|0.8|^TOPLEXIL
+P|Hélicidine sirop|flacon de 250 ml|2700|0.6|^HELICIDINE
+P|Sérum physiologique unidoses|boîte de 30|1700|1.6|
+P|Uvestérol D 1500 UI/ml|flacon de 20 ml|2600|0.5|^UVESTEROL
+P|Zyma D 10 000 UI/ml|flacon de 10 ml|2200|0.4|^ZYMAD 10 000
+P|Lait Guigoz 1er âge|boîte de 400 g|4900|0.9|
+P|Lait Nidal 2e âge|boîte de 400 g|4700|0.7|
+P|Couches Pampers taille 4|paquet de 30|6500|0.6|
+P|Biberon 250 ml|1 biberon|2500|0.2|
+P|Mitosyl crème|tube de 65 g|2900|0.5|
+P|Dexeryl crème|tube de 250 g|4300|0.3|^DEXERYL
+R|Ventoline 100 µg|flacon pressurisé 200 doses|3700|1.2|^VENTOLINE 100 microgrammes/dose :: suspension pour inhalation
+R|Salbutamol 2 mg|boîte de 20 comprimés|900|0.6|
+R|Sérétide 250/25 µg|flacon pressurisé 120 doses|17900|0.1|^SERETIDE 250
+R|Becotide 250 µg|flacon pressurisé 200 doses|7600|0.1|
+R|Aérius 5 mg|boîte de 30 comprimés|4900|0.5|^AERIUS 5 mg :: comprimé
+R|Cétirizine 10 mg Biogaran|boîte de 15 comprimés|1600|1.5|^CETIRIZINE BIOGARAN 10
+R|Loratadine 10 mg|boîte de 15 comprimés|1500|0.9|^LORATADINE BIOGARAN 10
+R|Polaramine 2 mg|boîte de 20 comprimés|1800|0.6|^POLARAMINE 2
+R|Clarityne 10 mg|boîte de 15 comprimés|3200|0.3|^CLARITYNE
+R|Rhinofluimucil|flacon de 10 ml|2900|0.7|^RHINOFLUIMUCIL
+R|Humex rhume|boîte de 16 comprimés|2900|0.8|^HUMEX RHUME
+R|Actifed rhume jour et nuit|boîte de 15 comprimés|3100|0.6|^ACTIFED RHUME JOUR ET NUIT
+R|Fervex adulte|boîte de 8 sachets|2800|0.9|^FERVEX ADULTES :: granulés
+R|Toplexil adulte sirop|flacon de 150 ml|2600|0.5|
+R|Bronchokod adulte|flacon de 300 ml|2700|0.6|^BRONCHOKOD ADULTES 5
+R|Mucomyst 200 mg|boîte de 18 sachets|2900|0.6|^MUCOMYST 200
+R|Pholcodine sirop|flacon de 150 ml|1900|0.4|
+R|Strepsils miel citron|boîte de 24 pastilles|2300|1.0|^STREPSILS MIEL CITRON
+R|Lysopaïne|boîte de 36 comprimés|2700|0.5|^LYSOPAÏNE CETYLPYRIDINIUM LYSOZYME SANS SUCRE
+R|Vicks VapoRub|pot de 50 g|2500|0.9|
+R|Euphon pastilles|boîte de 70|2100|0.4|
+V|Vitamine C Upsa 1000 mg|tube de 20 comprimés effervescents|2300|1.4|^VITAMINE C UPSA
+V|Laroscorbine 1 g|boîte de 10 comprimés|2400|0.5|
+V|Supradyn intensia|tube de 30 comprimés|7900|0.3|
+V|Berocca|tube de 30 comprimés effervescents|8500|0.3|
+V|Tardyféron 80 mg|boîte de 30 comprimés|1900|1.1|^TARDYFERON 80
+V|Fumafer 66 mg|boîte de 100 comprimés|2400|0.6|^FUMAFER 66
+V|Acide folique 5 mg|boîte de 20 comprimés|700|1.0|^ACIDE FOLIQUE CCD 5
+V|Fer + acide folique (grossesse)|boîte de 30 comprimés|1200|1.1|
+V|Gestarelle G|boîte de 30 capsules|9800|0.2|
+V|Magné B6|boîte de 60 comprimés|3400|0.8|^MAGNE B6 48
+V|Vitamine B1 B6 B12|boîte de 30 comprimés|1900|0.6|
+V|Calcium vitamine D3|boîte de 60 comprimés|4600|0.4|^CACIT VITAMINE D3 1000
+V|Oligosol zinc|boîte de 28 ampoules|5200|0.1|
+V|Spiruline 500 mg|flacon de 120 comprimés|6500|0.3|
+V|Alvityl multivitamines sirop|flacon de 150 ml|4500|0.3|
+V|Ginseng Pharmaton|boîte de 30 capsules|9600|0.2|
+X|Bétadine dermique 10 %|flacon de 125 ml|2700|1.0|^BETADINE DERMIQUE 10
+X|Bétadine gynécologique|flacon de 125 ml|3200|0.4|^BETADINE ALCOOLIQUE
+X|Alcool à 70°|flacon de 250 ml|900|1.2|
+X|Eau oxygénée 10 volumes|flacon de 250 ml|700|0.7|
+X|Dakin Cooper|flacon de 250 ml|1900|0.5|^DAKIN COOPER
+X|Biseptine|flacon de 250 ml|3300|0.4|^BISEPTINE
+X|Compresses stériles|boîte de 50|1900|0.8|
+X|Coton hydrophile|paquet de 100 g|800|0.9|
+X|Sparadrap|rouleau de 5 m|900|0.8|
+X|Bande Velpeau 10 cm|1 bande|700|0.6|
+X|Pansements assortis|boîte de 20|1500|0.8|
+X|Seringues 5 ml|boîte de 100|5500|0.3|
+X|Gants d'examen|boîte de 100|4500|0.3|
+X|Thermomètre électronique|1 thermomètre|3500|0.2|
+X|Tensiomètre poignet|1 appareil|19500|0.05|
+X|Préservatifs Manix|boîte de 12|2500|0.5|
+X|Test de grossesse|1 test|1500|0.5|
+X|Moustiquaire imprégnée|1 moustiquaire|4500|0.2|
+X|Lotion anti-moustiques Cinq sur Cinq|flacon de 75 ml|5500|0.4|
+X|Crème Biafine|tube de 93 g|3800|0.4|^BIAFINE
+X|Vaseline pure|pot de 100 g|900|0.6|
+X|Sérum physiologique 500 ml|flacon de 500 ml|1100|0.5|
+X|Masques chirurgicaux|boîte de 50|2500|0.3|
+X|Gel hydroalcoolique|flacon de 300 ml|1900|0.4|
+X|Dentifrice Sensodyne|tube de 75 ml|3500|0.3|
+X|Brosse à dents souple|1 brosse|900|0.4|
+X|Solution lentilles|flacon de 360 ml|7500|0.05|
+X|Collyre Dacryoserum|boîte de 20 unidoses|2300|0.4|^DACRYOSERUM
+X|Collyre Tobrex|flacon de 5 ml|2900|0.3|^TOBREX 0 :: collyre
+X|Otipax gouttes auriculaires|flacon de 16 g|3100|0.3|^OTIPAX
+X|Hextril bain de bouche|flacon de 200 ml|2600|0.3|^HEXTRIL
+X|Éosine aqueuse 2 %|boîte de 10 unidoses|1400|0.5|
+X|Fucidine crème 2 %|tube de 15 g|3300|0.5|^FUCIDINE 2 POUR CENT :: crème
+X|Hydrocortisone crème 1 %|tube de 15 g|2100|0.4|
+X|Diprosone crème|tube de 30 g|2900|0.4|^DIPROSONE .*:: crème
+X|Ketoconazole shampoing|flacon de 100 ml|4600|0.2|^KETOCONAZOLE BIOGARAN 2
+X|Ascabiol (gale)|flacon de 125 ml|2900|0.2|
+X|Pédiculicide Pouxit|flacon de 100 ml|5900|0.1|
+X|Huile d'argan|flacon de 50 ml|4500|0.1|
+X|Crème de karité|pot de 100 ml|1900|0.3|
