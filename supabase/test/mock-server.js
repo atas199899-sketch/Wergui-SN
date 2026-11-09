@@ -32,6 +32,20 @@ async function auth(req, res, p, url) { const b = ["POST", "PUT"].includes(req.m
   if (p === "logout") return send(res, 204);
   if (p === "recover") return send(res, 200, {});
   send(res, 404, { msg: "not found" }); }
+// Simule la fonction serveur « pin » (supabase/functions/pin) : mêmes fonctions SQL, appelées avec les droits de service
+async function fonctions(req, res, p) { const b = await body(req);
+  if (p !== "pin") return send(res, 404, { error: "not found" });
+  try {
+    if (b.action === "connexion") { const r = (await pool.query("select public.pin_connexion($1,$2,$3) as r", [b.jeton, b.user_id, String(b.pin || "")])).rows[0].r; if (!r.ok) return send(res, 200, r);
+      const u = (await pool.query("select * from auth.users where email=$1", [r.email])).rows[0], s = session(u); return send(res, 200, { ok: true, session: { access_token: s.access_token, refresh_token: s.refresh_token } }); }
+    if (b.action === "creer_membre") { const sub = subOf(req); if (!sub) return send(res, 401, { error: "Connexion requise" });
+      await pool.query("select public.membre_sans_email_verifier($1,$2,$3,$4,$5)", [b.pharmacy_id, sub, b.nom, b.role, String(b.pin || "")]);
+      const u = (await pool.query("insert into auth.users (email,pw,raw_user_meta_data) values ($1,$2,$3) returning *", ["m." + crypto.randomUUID() + "@membres.werguisn.invalid", crypto.randomUUID(), { nom: b.nom, sans_email: true }])).rows[0];
+      try { await pool.query("select public.membre_sans_email_creer($1,$2,$3,$4,$5,$6)", [b.pharmacy_id, sub, u.id, b.nom, b.role, String(b.pin || "")]); }
+      catch (e) { await pool.query("delete from auth.users where id=$1", [u.id]); throw e; }
+      return send(res, 200, { ok: true, user_id: u.id }); }
+    return send(res, 400, { error: "Action inconnue" });
+  } catch (e) { return send(res, 400, { error: e.message }); } }
 async function rest(req, res, p, url) { const sub = subOf(req), single = /vnd\.pgrst\.object/.test(req.headers.accept || ""), params = [...url.searchParams.entries()];
   try {
     if (p.startsWith("rpc/")) { const fn = p.slice(4); if (!idOk(fn)) throw new Error("bad fn"); const b = await body(req), keys = Object.keys(b), vals = keys.map(k => { const v = b[k]; return v === null ? null : typeof v === "object" ? JSON.stringify(v) : String(v); });
@@ -54,6 +68,7 @@ http.createServer(async (req, res) => { const url = new URL(req.url, "http://x")
   try {
     if (url.pathname.startsWith("/sb/auth/v1/")) return await auth(req, res, url.pathname.slice(12), url);
     if (url.pathname.startsWith("/sb/rest/v1/")) return await rest(req, res, url.pathname.slice(12), url);
+    if (url.pathname.startsWith("/sb/functions/v1/")) return await fonctions(req, res, url.pathname.slice(17));
     if (url.pathname === "/app/config.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(`window.WERGUI_CONFIG={supabaseUrl:"http://localhost:${PORT}/sb",supabaseAnonKey:"anon",medicamentsUrl:"/medicaments.json",contactWhatsApp:"221770000000"};`); }
     let f = path.join(ROOT, decodeURIComponent(url.pathname)); if (!f.startsWith(ROOT)) return send(res, 403); if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, "index.html");
     if (!fs.existsSync(f)) return send(res, 404, { message: "not found" }); res.writeHead(200, { "content-type": MIME[path.extname(f)] || "application/octet-stream" }); fs.createReadStream(f).pipe(res);

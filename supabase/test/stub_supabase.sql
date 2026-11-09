@@ -15,3 +15,5 @@ alter table auth.users add column if not exists pw text;
 alter table auth.users add column if not exists created_at timestamptz default now();
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
+do $$ begin if not exists (select from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if; end $$;
+grant usage on schema public, auth to service_role;

@@ -261,6 +261,46 @@ select public.admin_traiter_paiement(:'pay3',true,null);
 reset role;
 select pg_temp.ok((select paye_jusqu=(current_date + interval '13 months')::date from pharmacies where id=:'p2'),'renouvellement : un mois ajouté à la suite');
 
+-- Poste de la pharmacie : choisir son nom et taper son PIN
+reset role;
+insert into auth.users (id,email) values ('00000000-0000-0000-0000-00000000000f','m.test@membres.werguisn.invalid');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.creer_poste(%L,''Comptoir'')',:'p'),'seul le titulaire déclare un poste');
+select pg_temp.echoue(format('select public.membre_sans_email_creer(%L,''00000000-0000-0000-0000-00000000000a'',''00000000-0000-0000-0000-00000000000f'',''X'',''vendeur'',''3691'')',:'p'),'création de compte sans e-mail : jamais depuis l''application');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.creer_poste(:'p','Comptoir') as jeton \gset
+select pg_temp.ok(length(:'jeton')=48,'jeton secret du poste');
+reset role; set role service_role;
+select pg_temp.echoue(format('select public.membre_sans_email_creer(%L,''00000000-0000-0000-0000-00000000000b'',''00000000-0000-0000-0000-00000000000f'',''Ibou'',''vendeur'',''3691'')',:'p'),'seul le titulaire crée un compte sans e-mail');
+select pg_temp.echoue(format('select public.membre_sans_email_creer(%L,''00000000-0000-0000-0000-00000000000a'',''00000000-0000-0000-0000-00000000000f'',''Ibou'',''vendeur'',''1111'')',:'p'),'PIN trop simple refusé à la création');
+select public.membre_sans_email_creer(:'p','00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000f','Ibou Fall','vendeur','3691');
+reset role; set role anon;
+select pg_temp.ok((public.poste_info(:'jeton')->'membres') @> '[{"nom":"Ibou Fall","pin":true}]','sur le poste, sans connexion : liste des membres');
+select pg_temp.ok(not (public.poste_info('faux')->>'ok')::boolean,'faux jeton : rien n''est montré');
+select pg_temp.echoue(format('select public.pin_connexion(%L,''00000000-0000-0000-0000-00000000000f'',''3691'')',:'jeton'),'connexion par PIN : jamais appelée directement depuis le navigateur');
+reset role; set role service_role;
+select pg_temp.ok((public.pin_connexion(:'jeton','00000000-0000-0000-0000-00000000000f','0000')->>'reste')::int=4,'mauvais PIN compté');
+select pg_temp.ok((public.pin_connexion(:'jeton','00000000-0000-0000-0000-00000000000f','3691')->>'email')='m.test@membres.werguisn.invalid','bon PIN + jeton du poste : connexion accordée');
+select pg_temp.ok(not (public.pin_connexion('faux','00000000-0000-0000-0000-00000000000f','3691')->>'ok')::boolean,'bon PIN sans le poste : refusé');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.definir_pin_membre(:'p','00000000-0000-0000-0000-00000000000f','4826');
+select pg_temp.echoue(format('select public.definir_pin_membre(%L,''00000000-0000-0000-0000-00000000000b'',''4826'')',:'p'),'le titulaire ne choisit pas le PIN d''un compte avec e-mail');
+reset role; set role service_role;
+select pg_temp.ok((public.pin_connexion(:'jeton','00000000-0000-0000-0000-00000000000f','4826')->>'ok')::boolean,'nouveau PIN choisi par le titulaire');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.modifier_membre(:'p','00000000-0000-0000-0000-00000000000f','Ibou Fall','vendeur','{}',false);
+reset role; set role service_role;
+select pg_temp.ok(not (public.pin_connexion(:'jeton','00000000-0000-0000-0000-00000000000f','4826')->>'ok')::boolean,'membre désactivé : plus de connexion');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.supprimer_poste((select id from postes where pharmacy_id=:'p'));
+select pg_temp.ok(not (public.poste_info(:'jeton')->>'ok')::boolean,'poste retiré : liste plus affichée');
+reset role;
+delete from membres where user_id='00000000-0000-0000-0000-00000000000f';
+
+
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');

@@ -313,3 +313,4 @@ input:not([type]),input[type=email],input[type=password]{border:1px solid var(--
 @media (max-width:760px){.payqrli{display:none}}
 /* hors ligne */
 .hl{background:var(--acc-soft);color:inherit;border:1px solid var(--acc);border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:.92rem}
+.pinusers .pick.off{opacity:.55;cursor:default}
