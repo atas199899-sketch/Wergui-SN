@@ -19,7 +19,7 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { ret
 function toast(t, bad) { document.querySelectorAll(".toast").forEach(x => x.remove()); const el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); if (bad) el.style.background = "var(--bad)"; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), bad ? 6000 : 3600); }
 function closeLayer() { $("#layer").innerHTML = ""; }
 function layer(html, center) { $("#layer").innerHTML = `<div class="overlay ${center ? "center" : ""}" data-close="1">${html}</div>`; cards($("#layer")); const f = $("#layer .x"); f && f.focus(); }
-function errMsg(e) { const m = (e && (e.message || e.error_description || e.msg)) || String(e); if (/Invalid login credentials/i.test(m)) return "E-mail ou mot de passe incorrect."; if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par e-mail)."; if (/User already registered/i.test(m)) return "Un compte existe déjà avec cet e-mail : connectez-vous."; if (/Password should be at least|weak/i.test(m)) return "Mot de passe trop court ou trop simple (8 caractères minimum)."; if (/Failed to fetch|NetworkError/i.test(m)) return "Pas de connexion internet. Réessayez."; return m; }
+function errMsg(e) { const m = (e && (e.message || e.error_description || e.msg)) || String(e); if (estReseau(e)) return "Pas de connexion internet : cette action sera possible au retour du réseau."; if (/Invalid login credentials/i.test(m)) return "E-mail ou mot de passe incorrect."; if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par e-mail)."; if (/User already registered/i.test(m)) return "Un compte existe déjà avec cet e-mail : connectez-vous."; if (/Password should be at least|weak/i.test(m)) return "Mot de passe trop court ou trop simple (8 caractères minimum)."; if (/Failed to fetch|NetworkError/i.test(m)) return "Pas de connexion internet. Réessayez."; return m; }
 async function run(btn, fn) { if (btn) btn.classList.add("busy"); try { return await fn(); } catch (e) { console.warn(e); toast(errMsg(e), true); } finally { if (btn) btn.classList.remove("busy"); } }
 function cards(root) { (root || document).querySelectorAll(".tw table").forEach(t => { t.classList.add("cards"); const h = [...t.querySelectorAll("thead th")].map(x => x.textContent.trim()); t.querySelectorAll("tbody tr,tfoot tr").forEach(tr => { let i = 0; [...tr.children].forEach(td => { if (!td.hasAttribute("data-l")) td.setAttribute("data-l", td.colSpan > 1 ? "" : (h[i] || "")); i += td.colSpan || 1; }); }); }); }
 const normPhone = t => { let d = String(t || "").replace(/\D/g, ""); if (d.length === 9) d = "221" + d; return d; };
@@ -83,6 +83,7 @@ const API = {
   adminDefinir: (p, formule, statut, paye) => rpc("admin_definir_abonnement", { p, p_formule: formule, p_statut: statut, p_paye_jusqu: paye || null }),
   toutesVentes: async pid => { const v = await all("ventes", b => b.eq("pharmacy_id", pid).order("created_at", { ascending: false })), l = await all("vente_lignes", b => b.eq("pharmacy_id", pid)); return { v, l }; },
   creerPharmacie: (nom, ville, tel, titulaire) => rpc("creer_pharmacie", { p_nom: nom, p_ville: ville, p_telephone: tel, p_nom_titulaire: titulaire }),
+  vendreId: (x, horsLigne) => rpc("enregistrer_vente_hors_ligne", { p: x.pid, p_client_id: x.cid, p_lignes: x.lignes, p_mode: x.mode, p_remise_pct: x.remise, p_organisme: x.org, p_vendu_le: x.at, p_hors_ligne: horsLigne }),
   vendre: (p, lignes, mode, remise, organisme) => rpc("enregistrer_vente", { p, p_lignes: lignes, p_mode: mode, p_remise_pct: remise, p_organisme: organisme }),
   ajouterLot: (p, produit, numero, peremption, quantite) => rpc("ajouter_lot", { p, p_produit: produit, p_numero: numero, p_peremption: peremption, p_quantite: quantite }),
   sortirLot: (lot, type) => rpc("sortir_lot", { p_lot: lot, p_type: type }),
@@ -134,7 +135,8 @@ const premium = () => D.ph.formule === "officine" || D.ph.statut === "essai";
 const essaiReste = () => D.ph.statut === "essai" ? dj(D.ph.essai_fin) : null;
 const CONTACT_MAIL = CFG.contactEmail || "contact.werguisn@gmail.com";
 function contactLien(msg) { return CFG.contactWhatsApp ? `https://wa.me/${normPhone(CFG.contactWhatsApp)}?text=${encodeURIComponent(msg)}` : `mailto:${CONTACT_MAIL}?subject=${encodeURIComponent("Wergui SN – " + D.ph.nom)}&body=${encodeURIComponent(msg)}`; }
-function bandeau() { const p = D.ph, r = essaiReste();
+function bandeau() { return bandeauReseau() + bandeauAbo(); }
+function bandeauAbo() { const p = D.ph, r = essaiReste();
   if (p.statut === "suspendu") return `<p class="err" role="alert">Abonnement suspendu : les ventes et entrées de stock sont bloquées, vos données restent consultables. ${isTit() ? `<a href="${contactLien("Bonjour, je souhaite réactiver l'abonnement de " + p.nom)}" target="_blank" rel="noopener">Réactiver</a>` : "Prévenez le titulaire."}</p>`;
   if (r != null && r < 0) return `<p class="err" role="alert">Votre période d'essai est terminée. ${isTit() ? `<button class="linkbtn" data-go="abonnement">Choisir une formule</button>` : "Prévenez le titulaire."}</p>`;
   if (p.statut === "actif" && p.paye_jusqu && isTit()) { const j = dj(p.paye_jusqu); if (j < 0) return `<p class="err" role="alert">Votre abonnement a pris fin le ${dfr(p.paye_jusqu)}. <button class="linkbtn" data-go="abonnement">Renouveler</button></p>`; if (j <= 7) return `<p class="info">Votre abonnement se termine le ${dfr(p.paye_jusqu)}. <button class="linkbtn" data-go="abonnement">Renouveler</button></p>`; }
@@ -202,11 +204,11 @@ function more() { const items = navItems(), mt = mainTabs(); layer(`<div class="
 function render(keep) { stopCam(); nav(); const y = window.scrollY; $("#main").innerHTML = bandeau() + V[S.view](); if (S.view === "stock") fillStock(); if (S.view === "caisse") fillRes(); if (S.view === "inventaire") invTotals(); if (S.view === "abonnement") fillQR(); if (S.view === "scanner") { V_scanRes(); V_scanList(); loadMed(); } cards(); window.scrollTo(0, keep ? y : 0); }
 let LAST = Date.now();
 ["click","keydown","touchstart","scroll"].forEach(ev => document.addEventListener(ev, () => { LAST = Date.now(); }, { passive: true }));
-setInterval(async () => { if (!D) return; if (posteOn()) { const pm = +R().deconnexion_min || 10; if (Date.now() - LAST > pm * 60000) verrouiller(`Verrouillé après ${pl(pm, "minute")} sans activité.`); return; } const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
+setInterval(async () => { if (!D || S.offline || navigator.onLine === false) return; if (posteOn()) { const pm = +R().deconnexion_min || 10; if (Date.now() - LAST > pm * 60000) verrouiller(`Verrouillé après ${pl(pm, "minute")} sans activité.`); return; } const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
 function confirmerTexte(t) { return S._confirm === t ? (S._confirm = null, true) : (S._confirm = t, toast(t + " Touchez à nouveau pour confirmer."), false); }
 function go(v) { S.view = v; S.q = ""; if (v === "finances") S.fin = null; if (v === "abonnement") S.abo = null; if (v === "console") S.adminList = null; closeLayer(); render(); }
 const head = (t, s, right = "") => `<div class="top"><div><h1>${t}</h1><p>${s}</p></div><div class="row">${right}</div></div>`;
-async function reload(keep) { D = await API.load(S.pid); computeVJ(); if (!S.invCat) S.invCat = (D.rayons[0] || {}).id || ""; render(keep); }
+async function reload(keep) { D = await charger(S.pid); computeVJ(); sauverSnapshot(); if (!S.invCat) S.invCat = (D.rayons[0] || {}).id || ""; render(keep); }
 
 /* ================================================================ poste partagé et code PIN */
 // Sur le poste de la pharmacie, chaque membre qui a un code PIN reste « mémorisé » : on passe de l'un à l'autre
@@ -216,7 +218,7 @@ const posteOn = () => !!POSTE.get();
 const initiales = n => esc(String(n || "?").replace(/^Dr\s+/, "").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase());
 async function memoriser() { const p = POSTE.get(); if (!p || !S.pinOk || !D) return; const ses = await API.session(); if (!ses) return;
   p.users[ses.user.id] = { nom: me().nom, email: ses.user.email, at: ses.access_token, rt: ses.refresh_token, vu: Date.now() }; POSTE.set(p); }
-async function verrouiller(msg) { if (!posteOn()) return; stopCam(); try { await memoriser(); } catch (e) {} store.set("wergui.verrou", "1"); D = null; closeLayer(); S.pinFor = null; S.pin = ""; ecranVerrou(msg); }
+async function verrouiller(msg) { if (!posteOn()) return; if (S.offline || navigator.onLine === false) return msg ? null : toast("Changement d'utilisateur impossible sans internet : le code PIN est vérifié par le serveur.", true); stopCam(); try { await memoriser(); } catch (e) {} store.set("wergui.verrou", "1"); D = null; closeLayer(); S.pinFor = null; S.pin = ""; ecranVerrou(msg); }
 function ecranVerrou(msg, err) { stopCam(); const p = POSTE.get() || { users: {} }, us = Object.entries(p.users).sort((a, b) => a[1].nom.localeCompare(b[1].nom)), u = S.pinFor && p.users[S.pinFor];
   $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><svg width="34" height="34" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="currentColor" opacity=".16"/><path d="M12 6h6v6h6v6h-6v6h-6v-6H6v-6h6z" fill="currentColor"/></svg><b>Wergui SN</b></div>
     ${u ? `<h1>${esc(u.nom)}</h1><p class="muted">Tapez votre code PIN.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ""}
@@ -247,6 +249,54 @@ const posteSection = () => { const p = POSTE.get(), ici = p && p.pid === S.pid;
     <div>${Object.entries(p.users).map(([id, x]) => `<div class="set"><div class="grow"><b>${esc(x.nom)}</b><small>${esc(x.email)}</small></div><button class="btn sm" data-posterm="${id}">Retirer du poste</button></div>`).join("") || '<p class="muted">Personne n\'est encore mémorisé. Chaque membre se connecte une fois ici et crée son code PIN dans « Mon compte ».</p>'}</div>
     <div class="row"><button class="btn" data-act="posteoff">Ne plus utiliser cet appareil comme poste partagé</button></div>`
   : `<p class="muted">À activer seulement sur l'appareil qui reste à la pharmacie, jamais sur un téléphone personnel.</p><div class="row"><button class="btn pri" data-act="posteon">Faire de cet appareil le poste de la pharmacie</button></div>`}</section>`; };
+
+/* ================================================================ hors ligne */
+// Les données de la pharmacie sont gardées sur l'appareil (IndexedDB). Sans internet, l'application s'ouvre avec ces
+// données et les ventes sont mises en file, puis envoyées au retour du réseau (identifiant unique : jamais en double).
+function estReseau(e) { const m = String((e && (e.message || e.name)) || e || ""); return (e && e.name === "AuthRetryableFetchError") || /Failed to fetch|NetworkError|Load failed|network|fetch failed|ERR_INTERNET|délai/i.test(m); }
+const IDB = (() => { let dbp = null;
+  const db = () => dbp || (dbp = new Promise((ok, ko) => { const r = indexedDB.open("wergui", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => ok(r.result); r.onerror = () => { dbp = null; ko(r.error); }; }));
+  const tx = (mode, fn) => db().then(d => new Promise((ok, ko) => { const t = d.transaction("kv", mode), req = fn(t.objectStore("kv")); t.oncomplete = () => ok(req && req.result); t.onerror = () => ko(t.error); }));
+  return { get: k => tx("readonly", s => s.get(k)).catch(() => null), set: (k, v) => tx("readwrite", s => s.put(v, k)).catch(() => {}), del: k => tx("readwrite", s => s.delete(k)).catch(() => {}) }; })();
+const snapKey = (uid, pid) => "snap:" + uid + ":" + pid, fileKey = uid => "file:" + uid;
+const nouvelId = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+function sauverSnapshot() { if (!D || !S.user) return; IDB.set(snapKey(S.user.id, S.pid), { D, at: S.snapAt || Date.now(), mems: S.mems, phs: S.phs, user: { id: S.user.id, email: S.user.email, user_metadata: S.user.user_metadata, created_at: S.user.created_at } }); store.set("wergui.dernier", JSON.stringify({ uid: S.user.id, pid: S.pid })); }
+async function charger(pid) {
+  try { const d = await API.load(pid); S.offline = false; S.snapAt = Date.now(); return d; }
+  catch (e) { if (!estReseau(e)) throw e; const s = await IDB.get(snapKey(S.user.id, pid)); if (!s) throw e; S.offline = true; S.snapAt = s.at; return s.D; } }
+async function majFile() { if (!S.user) return; const box = (await IDB.get(fileKey(S.user.id))) || []; S.file = box; const a = S.pending, b = S.pendingErr; S.pending = box.filter(x => !x.err).length; S.pendingErr = box.filter(x => x.err).length; if (D && (a !== S.pending || b !== S.pendingErr) && $("#main")) render(true); }
+// Session gardée sur l'appareil sans internet : on rouvre la dernière pharmacie avec ses données
+async function bootHorsLigne() { let der = null; try { der = JSON.parse(store.get("wergui.dernier") || "null"); } catch (e) {}
+  const jeton = Object.keys(localStorage).some(k => /^sb-.*-auth-token$/.test(k));
+  const s = der && jeton ? await IDB.get(snapKey(der.uid, der.pid)) : null;
+  if (!s) { authScreen("login", null, "Pas de connexion internet. Connectez-vous une première fois avec internet : l'application pourra ensuite s'ouvrir sans réseau."); return; }
+  S.user = s.user; S.mems = s.mems; S.phs = s.phs; S.pid = der.pid; S.offline = true; S.snapAt = s.at; S.admin = false;
+  D = s.D; computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours; await majFile(); shell(); render(); }
+function venteLocale(x, items) { // applique la vente aux données gardées sur l'appareil (FEFO, comme en base)
+  items.forEach(({ p, q }) => { let reste = q; live(p).forEach(l => { const t = Math.min(l.quantite, reste); l.quantite -= t; reste -= t; if (t) D.lignes.push({ id: nouvelId(), vente_id: x.cid, pharmacy_id: x.pid, produit_id: p.id, lot_id: l.id, quantite: t, prix_unitaire: p.prix_vente, created_at: x.at }); }); });
+  D.ventes.unshift({ id: x.cid, pharmacy_id: x.pid, user_id: S.user.id, total: x.total, remise_pct: x.remise, mode: x.mode, organisme: x.org, part_assurance: x.part, created_at: x.at, hors_ligne: true, _local: true });
+  computeVJ(); sauverSnapshot(); }
+async function venteHorsLigne(x, items) { const k = fileKey(S.user.id), box = (await IDB.get(k)) || []; box.push(x); await IDB.set(k, box); venteLocale(x, items); await majFile(); }
+let SYNC = false;
+async function synchroniser() { if (SYNC || !S.user || navigator.onLine === false) return; const k = fileKey(S.user.id); let box = (await IDB.get(k)) || []; const todo = box.filter(x => !x.err); if (!todo.length) return majFile();
+  SYNC = true; let ok = 0, manq = 0, coupe = false;
+  try { for (const x of todo) { try { const r = await API.vendreId(x, true); ok++; manq += (r && r.manquant) || 0; box = box.filter(y => y.cid !== x.cid); } catch (e) { if (estReseau(e)) { coupe = true; break; } x.err = errMsg(e); } await IDB.set(k, box); } }
+  finally { SYNC = false; }
+  if (ok) { if (D && !coupe) { try { D = await charger(S.pid); computeVJ(); sauverSnapshot(); } catch (e) {} } toast(`${pl(ok, "vente faite hors ligne envoyée", "ventes faites hors ligne envoyées")}.${manq ? ` Attention : ${pl(manq, "boîte vendue n'était", "boîtes vendues n'étaient")} plus en stock dans Wergui SN, vérifiez l'inventaire.` : ""}`, !!manq); }
+  await majFile(); if (D && ok) render(true); }
+function bandeauReseau() { let h = "";
+  if (S.offline) h += `<p class="hl" role="status"><b>Hors ligne.</b> Données du ${new Date(S.snapAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. Les ventes sont gardées sur cet appareil${S.pending ? ` (${S.pending} en attente)` : ""} et seront envoyées dès le retour d'internet. Les autres actions attendent le réseau.</p>`;
+  else if (S.pending) h += `<p class="info" role="status">${pl(S.pending, "vente faite hors ligne", "ventes faites hors ligne")} en cours d'envoi… <button class="linkbtn" data-act="syncnow">Envoyer maintenant</button></p>`;
+  if (S.pendingErr) h += `<p class="err" role="alert">${pl(S.pendingErr, "vente faite hors ligne n'a", "ventes faites hors ligne n'ont")} pas pu être enregistrée${S.pendingErr > 1 ? "s" : ""}. <button class="linkbtn" data-act="fileerr">Voir</button></p>`;
+  return h; }
+function fileErreurs() { const xs = (S.file || []).filter(x => x.err);
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Ventes non envoyées"><div class="top"><div><h2>Ventes non envoyées</h2><p>Faites sans internet, refusées par Wergui SN au moment de l'envoi.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  ${xs.map(x => `<div class="set"><div class="grow"><b>${dfr(x.at)} ${hm(x.at)} · ${fmt(x.total)} (${esc(x.mode)})</b><small>${esc(x.resume || "")}</small><small class="err" style="display:block;padding:4px 8px;margin-top:4px">${esc(x.err)}</small></div>
+    <div class="row" style="gap:6px"><button class="btn sm" data-fileretry="${x.cid}">Réessayer</button><button class="btn sm" data-filedel="${x.cid}">Supprimer</button></div></div>`).join("") || '<p class="muted">Aucune.</p>'}
+  <p class="note-box">Supprimer retire la vente de la file : notez-la d'abord si l'argent a bien été encaissé.</p></div>`, true); }
+window.addEventListener("offline", () => { S.offline = true; if (D) render(true); });
+window.addEventListener("online", () => { if (!D) return; S.offline = false; render(true); synchroniser().then(() => reload(true)).catch(() => {}); });
+setInterval(() => { if (D && navigator.onLine !== false) synchroniser(); }, 30000);
 
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
@@ -287,10 +337,14 @@ function pickPharmacy() {
 }
 async function boot() {
   if (!sb) { $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><b>Wergui SN</b></div><h1>Bientôt disponible</h1><p class="muted">L'application est en cours de mise en service. En attendant, essayez la démo.</p><a class="btn pri" href="../demo/" style="text-align:center;text-decoration:none">Voir la démo</a></div></div>`; return; }
-  const ses = await API.session();
+  let ses = null; try { ses = await API.session(); } catch (e) { if (!estReseau(e)) throw e; }
+  if (!ses && navigator.onLine === false) return bootHorsLigne();
   if (!ses) { authScreen(location.hash === "#creer" ? "creer" : location.hash === "#rejoindre" ? "rejoindre" : "login"); return; }
   if (posteOn() && store.get("wergui.verrou") === "1") { ecranVerrou(); return; }
   S.user = ses.user;
+  try { return await bootEnLigne(); } catch (e) { if (estReseau(e)) return bootHorsLigne(); throw e; }
+}
+async function bootEnLigne() {
   S.mems = await API.memberships(S.user.id);
   if (!S.mems.length) {
     const meta = S.user.user_metadata || {};
@@ -309,10 +363,10 @@ async function boot() {
   $("#root").innerHTML = `<div class="loading"><div><div class="spin"></div>Chargement de la pharmacie…</div></div>`;
   try { S.admin = await API.suisAdmin(); } catch (e) { S.admin = false; }
   if (S.admin) { try { S.adminPend = (await API.adminPaiements()).filter(x => x.statut === "en_attente").length; } catch (e) {} }
-  D = await API.load(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
+  D = await charger(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
   if (location.hash === "#console" && S.admin) S.view = "console";
   try { S.pinOk = await API.aUnPin(); } catch (e) { S.pinOk = false; }
-  shell(); render(); memoriser().catch(() => {});
+  shell(); render(); memoriser().catch(() => {}); sauverSnapshot(); majFile().then(synchroniser);
 }
 function compte() {
   const m = me();
@@ -394,9 +448,14 @@ function fillRes() { const el = $("#res"); if (!el) return; const q = S.q.trim()
 function addCart(pid, silent) { const p = byId(pid), c = S.cart.find(x => x.pid === pid), q = c ? c.q : 0; if (q >= stock(p)) { toast(stock(p) ? `Plus que ${stock(p)} en stock.` : `${p.nom} : rupture de stock.`, true); return false; } c ? c.q++ : S.cart.push({ pid, q: 1 }); if (silent) { nav(); return true; } render(true); return true; }
 async function encaisser(btn) { await run(btn, async () => {
   const lignes = S.cart.map(c => ({ produit_id: c.pid, quantite: c.q })), mode = S.pay, tot = net(), items = S.cart.map(c => ({ p: byId(c.pid), q: c.q }));
-  await API.vendre(S.pid, lignes, mode, S.remise, mode === "Assurance" ? (S.org || R().organismes[0]) : null);
-  printTicket(items, tot, mode); S.cart = []; S.remise = 0; S.q = ""; await reload();
-  toast(`Vente enregistrée : ${fmt(tot)} (${mode}).`); }); }
+  const org = mode === "Assurance" ? (S.org || R().organismes[0]) : null, tp = mode === "Assurance" ? Math.round(tot * R().tiers_payant / 100) : 0;
+  const x = { cid: nouvelId(), pid: S.pid, lignes, mode, remise: S.remise, org, at: new Date().toISOString(), total: tot, part: tp, resume: items.map(i => i.q + " × " + i.p.nom).join(", ") };
+  let hl = S.offline || navigator.onLine === false;
+  if (!hl) { try { await API.vendreId(x, false); } catch (e) { if (!estReseau(e)) throw e; hl = true; } }
+  if (hl) await venteHorsLigne(x, items);
+  printTicket(items, tot, mode); S.cart = []; S.remise = 0; S.q = "";
+  if (hl) { render(); return toast(`Vente gardée sur cet appareil : ${fmt(tot)} (${mode}). Elle sera envoyée au retour d'internet.`); }
+  await reload(); toast(`Vente enregistrée : ${fmt(tot)} (${mode}).`); }); }
 function printTicket(items, tot, mode) { $("#print").innerHTML = `<h3>${esc(D.ph.nom)}</h3><div>${esc(D.ph.adresse || "")} ${esc(D.ph.telephone || "")}</div><div>${new Date().toLocaleString("fr-FR")}</div><hr>${items.map(i => `<div class="l"><span>${i.q} × ${esc(i.p.nom)}</span><span>${fmt(i.q * i.p.prix_vente)}</span></div>`).join("")}<hr><div class="l"><b>Total</b><b>${fmt(tot)}</b></div><div>Paiement : ${esc(mode)}</div><div>Vendeur : ${esc(me().nom)}</div><p>${esc(D.ph.message_ticket || "")}</p>`; }
 
 /* ================================================================ stock et produits */
@@ -821,6 +880,8 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.stab) { S.setTab = d.stab; return render(true); }
   if (d.posterm) { const p = POSTE.get(); delete p.users[d.posterm]; POSTE.set(p); render(true); return toast("Membre retiré du poste."); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
+  if (d.fileretry || d.filedel) { const id = d.fileretry || d.filedel; if (d.filedel && !confirmerTexte("Supprimer définitivement cette vente de la file ?")) return;
+    return run(t, async () => { const k = fileKey(S.user.id), box = ((await IDB.get(k)) || []).filter(x => d.filedel ? x.cid !== id : true).map(x => (x.cid === id ? Object.assign(x, { err: null }) : x)); await IDB.set(k, box); closeLayer(); await majFile(); if (d.fileretry) await synchroniser(); render(true); }); }
   if (d.pform) { S.payF = d.pform; render(true); if (d.scroll) { const el = $("#paypanel"); el && el.scrollIntoView({ behavior: "smooth", block: "start" }); } return; }
   if (d.pmois) { S.payM = +d.pmois; return render(true); }
   if (d.pmoy) { S.payMoy = d.pmoy; return render(true); }
@@ -851,6 +912,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "more") return more();
   if (a === "compte") return compte();
   if (a === "verrou") return verrouiller();
+  if (a === "logout" && S.pending && !confirmerTexte(`${pl(S.pending, "vente faite hors ligne n'est", "ventes faites hors ligne ne sont")} pas encore envoyée${S.pending > 1 ? "s" : ""}. Elles partiront à votre prochaine connexion sur cet appareil. Se déconnecter quand même ?`)) return;
+  if (a === "logout" && S.user) { if (!S.pending) IDB.del(snapKey(S.user.id, S.pid)); }
+  if (a === "syncnow") return run(t, synchroniser);
+  if (a === "fileerr") return fileErreurs();
   if (a === "setpin") { const v = $("#npin").value.trim(); return run(t, async () => { await API.definirPin(v); S.pinOk = true; await memoriser(); closeLayer(); nav(); toast(posteOn() ? "Code PIN enregistré : vous êtes mémorisé sur ce poste." : "Code PIN enregistré."); }); }
   if (a === "posteon") return run(t, async () => { POSTE.set({ pid: S.pid, users: {} }); await memoriser(); render(true); toast(S.pinOk ? "Cet appareil est maintenant le poste partagé." : "Poste partagé activé. Créez votre code PIN dans « Mon compte » pour y être mémorisé."); });
   if (a === "posteoff") { if (!confirmerTexte("Ne plus utiliser cet appareil comme poste partagé ?")) return; POSTE.set(null); store.set("wergui.verrou", ""); render(true); return toast("Poste partagé désactivé sur cet appareil."); }
@@ -918,5 +983,6 @@ document.addEventListener("change", async e => { const t = e.target; if (!D) ret
   if (t.id === "orgs") { const list = t.value.split(",").map(x => x.trim()).filter(Boolean); return run(null, async () => { await saveReglages({ organismes: list.length ? list : ["IPM"] }); toast("Organismes enregistrés."); }); }
   if (t.dataset.paym) { const m = t.dataset.paym, cur = R().paiements, next = t.checked ? [...new Set(cur.concat(m))] : cur.filter(x => x !== m); if (!next.length) { t.checked = true; return toast("Gardez au moins un moyen de paiement.", true); } return run(null, async () => { await saveReglages({ paiements: next }); toast(`${m} : ${t.checked ? "accepté" : "désactivé"} en caisse.`); }); } });
 
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});
 if (sb) sb.auth.onAuthStateChange((ev, ses) => { if (ev === "PASSWORD_RECOVERY") authScreen("nouveau"); const p = POSTE.get(); if (ses && p && p.users[ses.user.id]) { Object.assign(p.users[ses.user.id], { at: ses.access_token, rt: ses.refresh_token }); POSTE.set(p); } });
 boot().catch(e => { console.error(e); $("#root").innerHTML = `<div class="auth"><div class="authcard"><h1>Erreur de chargement</h1><p class="err">${esc(errMsg(e))}</p><button class="btn pri" onclick="location.reload()">Réessayer</button></div></div>`; });

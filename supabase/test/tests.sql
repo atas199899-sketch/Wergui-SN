@@ -105,6 +105,28 @@ select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id
 select pg_temp.ok((select count(*) from produits where pharmacy_id=:'p')>=1,'abonnement suspendu : les données restent consultables');
 select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
 
+-- Ventes hors ligne
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select sum(quantite) as st0 from lots where produit_id=:'prod' and peremption>=current_date \gset
+select public.enregistrer_vente_hors_ligne(:'p','11111111-1111-1111-1111-111111111111',('[{"produit_id":"'||:'prod'||'","quantite":2}]')::jsonb,'Espèces',0,null,now()-interval '2 hours',true) as hl1 \gset
+select pg_temp.ok((select hors_ligne and created_at < now()-interval '1 hour' and total=1200 from ventes where client_id='11111111-1111-1111-1111-111111111111'),'vente hors ligne enregistrée à l''heure réelle');
+select public.enregistrer_vente_hors_ligne(:'p','11111111-1111-1111-1111-111111111111',('[{"produit_id":"'||:'prod'||'","quantite":2}]')::jsonb,'Espèces',0,null,now(),true) as hl2 \gset
+select pg_temp.ok((select count(*) from ventes where client_id='11111111-1111-1111-1111-111111111111')=1 and (select sum(quantite) from lots where produit_id=:'prod' and peremption>=current_date)=:st0-2,'renvoi de la même vente : comptée une seule fois');
+select public.enregistrer_vente_hors_ligne(:'p','22222222-2222-2222-2222-222222222222',('[{"produit_id":"'||:'prod'||'","quantite":'||(:st0+1)||'}]')::jsonb,'Wave',0,null,now(),true) as hl3 \gset
+select pg_temp.ok((:'hl3'::jsonb->>'manquant')::int=3 and (select count(*) from vente_lignes l join ventes v on v.id=l.vente_id where v.client_id='22222222-2222-2222-2222-222222222222' and l.stock_manquant)=1,'stock épuisé entre-temps : vente gardée, écart signalé');
+select public.enregistrer_vente_hors_ligne(:'p','33333333-3333-3333-3333-333333333333',('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Espèces',0,null,now()+interval '3 days',true);
+select pg_temp.ok((select created_at <= now() from ventes where client_id='33333333-3333-3333-3333-333333333333'),'date dans le futur ramenée à maintenant');
+select pg_temp.echoue(format('select public.enregistrer_vente_hors_ligne(%L,gen_random_uuid(),''[{"produit_id":"%s","quantite":1}]'',''Espèces'',10,null,now(),true)',:'p',:'prod'),'hors ligne : la remise reste soumise au droit');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue(format('select public.enregistrer_vente_hors_ligne(%L,gen_random_uuid(),''[]'',''Espèces'',0,null,now(),true)',:'p'),'hors ligne : pharmacie d''un autre refusée');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.enregistrer_vente_hors_ligne(%L,gen_random_uuid(),''[{"produit_id":"%s","quantite":500}]'',''Espèces'',0,null,now(),false)',:'p',:'prod'),'vente en ligne : stock insuffisant refusé');
+reset role;
+-- remettre du stock pour la suite des tests
+update lots set quantite = quantite + 5 where id = :'lot_long';
+
+
 -- Finances (formule Officine)
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
 select public.ouvrir_caisse(:'p',10000) as caisse \gset
