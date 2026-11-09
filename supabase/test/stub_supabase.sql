@@ -13,3 +13,5 @@ alter default privileges in schema public grant select, insert, update, delete o
 alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
 alter table auth.users add column if not exists pw text;
 alter table auth.users add column if not exists created_at timestamptz default now();
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;

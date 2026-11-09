@@ -155,6 +155,26 @@ select pg_temp.echoue(format('insert into depenses (pharmacy_id,libelle,montant)
 select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
 reset role;
 
+-- Code PIN
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.ok(not public.a_un_pin(),'pas de PIN par défaut');
+select pg_temp.echoue('select public.definir_pin(''12a4'')','PIN non numérique refusé');
+select pg_temp.echoue('select public.definir_pin(''1111'')','PIN trop facile refusé');
+select public.definir_pin('2580');
+select pg_temp.ok(public.a_un_pin(),'PIN enregistré');
+select pg_temp.ok((public.verifier_pin('2580')->>'ok')::boolean,'bon PIN accepté');
+select pg_temp.ok((public.verifier_pin('0000')->>'reste')::int=4,'mauvais PIN : 4 essais restants');
+select public.verifier_pin('0001'); select public.verifier_pin('0002'); select public.verifier_pin('0003');
+select pg_temp.ok((public.verifier_pin('0004')->>'bloque_min')::int=15,'5 erreurs : PIN bloqué 15 minutes');
+select pg_temp.ok(not (public.verifier_pin('2580')->>'ok')::boolean,'PIN bloqué même avec le bon code');
+reset role;
+select pg_temp.ok((select hash not like '%2580%' from private.pins limit 1),'PIN stocké haché');
+select pg_temp.echoue('set role authenticated; select * from private.pins','table des PIN illisible');
+reset role;
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.ok((public.verifier_pin('2580')->>'aucun')::boolean,'le PIN d''un autre ne sert à rien');
+reset role;
+
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');

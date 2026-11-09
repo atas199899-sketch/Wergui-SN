@@ -38,6 +38,9 @@ const API = {
   signIn: (email, password) => q(sb.auth.signInWithPassword({ email, password })),
   signUp: (email, password, data) => q(sb.auth.signUp({ email, password, options: { data, emailRedirectTo: APP_URL } })),
   signOut: () => sb.auth.signOut(),
+  signOutLocal: () => sb.auth.signOut({ scope: "local" }),
+  definirPin: pin => rpc("definir_pin", { p_pin: pin }),
+  aUnPin: () => rpc("a_un_pin", {}),
   recover: email => q(sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL })),
   setPassword: password => q(sb.auth.updateUser({ password })),
   memberships: uid => q(sb.from("membres").select("*").eq("user_id", uid).eq("actif", true)),
@@ -184,17 +187,57 @@ function nav() {
   const m = me(), ini = esc(m.nom.replace(/^Dr\s+/, "").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase());
   $("#role").innerHTML = `<span class="av">${ini}</span><span class="nm"><b>${esc(m.nom)}</b><small>${roleName(m.role)} · ${esc(D.ph.nom)}</small></span><span class="chev">▾</span>`;
   $("#mrole").innerHTML = `<span class="av">${ini}</span><span>${esc(m.nom.split(" ")[0])}</span>`;
-  $("#foot").innerHTML = `${esc(D.ph.nom)}<br>${D.ph.statut === "essai" ? "Période d'essai" : D.ph.statut === "suspendu" ? "Abonnement suspendu" : (D.ph.formule === "officine" ? "Formule Officine" : "Formule Petite officine")}<br><button class="linkbtn" data-act="logout" style="color:inherit;margin-top:8px">Se déconnecter</button>`;
+  $("#foot").innerHTML = `${esc(D.ph.nom)}<br>${D.ph.statut === "essai" ? "Période d'essai" : D.ph.statut === "suspendu" ? "Abonnement suspendu" : (D.ph.formule === "officine" ? "Formule Officine" : "Formule Petite officine")}<br>${posteOn() && S.pinOk ? `<button class="linkbtn" data-act="verrou" style="color:inherit;margin-top:8px;display:block">Changer d'utilisateur</button>` : ""}<button class="linkbtn" data-act="logout" style="color:inherit;margin-top:8px">Se déconnecter</button>`;
 }
-function more() { const items = navItems(), mt = mainTabs(); layer(`<div class="sheet" role="dialog" aria-modal="true" aria-label="Plus"><div class="grab"></div>${items.filter(i => !mt.includes(i[0])).map(([k, l, n]) => `<button class="it" data-go="${k}" ${S.view === k ? 'aria-current="page"' : ""}>${svg(k)}${l}${n ? `<span class="pill">${n}</span>` : ""}</button>`).join("")}<button class="it" data-act="compte">${svg("plus")}Mon compte</button><button class="it" data-act="logout">${svg("deconnexion")}Se déconnecter</button></div>`); }
+function more() { const items = navItems(), mt = mainTabs(); layer(`<div class="sheet" role="dialog" aria-modal="true" aria-label="Plus"><div class="grab"></div>${items.filter(i => !mt.includes(i[0])).map(([k, l, n]) => `<button class="it" data-go="${k}" ${S.view === k ? 'aria-current="page"' : ""}>${svg(k)}${l}${n ? `<span class="pill">${n}</span>` : ""}</button>`).join("")}<button class="it" data-act="compte">${svg("plus")}Mon compte</button>${posteOn() && S.pinOk ? `<button class="it" data-act="verrou">${svg("deconnexion")}Changer d'utilisateur</button>` : ""}<button class="it" data-act="logout">${svg("deconnexion")}Se déconnecter</button></div>`); }
 function render(keep) { stopCam(); nav(); const y = window.scrollY; $("#main").innerHTML = bandeau() + V[S.view](); if (S.view === "stock") fillStock(); if (S.view === "caisse") fillRes(); if (S.view === "inventaire") invTotals(); if (S.view === "scanner") { V_scanRes(); V_scanList(); loadMed(); } cards(); window.scrollTo(0, keep ? y : 0); }
 let LAST = Date.now();
 ["click","keydown","touchstart","scroll"].forEach(ev => document.addEventListener(ev, () => { LAST = Date.now(); }, { passive: true }));
-setInterval(async () => { if (!D) return; const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
+setInterval(async () => { if (!D) return; if (posteOn()) { const pm = +R().deconnexion_min || 10; if (Date.now() - LAST > pm * 60000) verrouiller(`Verrouillé après ${pl(pm, "minute")} sans activité.`); return; } const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
 function confirmerTexte(t) { return S._confirm === t ? (S._confirm = null, true) : (S._confirm = t, toast(t + " Touchez à nouveau pour confirmer."), false); }
 function go(v) { S.view = v; S.q = ""; if (v === "finances") S.fin = null; closeLayer(); render(); }
 const head = (t, s, right = "") => `<div class="top"><div><h1>${t}</h1><p>${s}</p></div><div class="row">${right}</div></div>`;
 async function reload(keep) { D = await API.load(S.pid); computeVJ(); if (!S.invCat) S.invCat = (D.rayons[0] || {}).id || ""; render(keep); }
+
+/* ================================================================ poste partagé et code PIN */
+// Sur le poste de la pharmacie, chaque membre qui a un code PIN reste « mémorisé » : on passe de l'un à l'autre
+// avec le PIN, sans retaper e-mail et mot de passe. Le PIN est vérifié par le serveur (5 erreurs = blocage 15 min).
+const POSTE = { get() { try { return JSON.parse(store.get("wergui.poste") || "null"); } catch (e) { return null; } }, set(v) { store.set("wergui.poste", v ? JSON.stringify(v) : ""); } };
+const posteOn = () => !!POSTE.get();
+const initiales = n => esc(String(n || "?").replace(/^Dr\s+/, "").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase());
+async function memoriser() { const p = POSTE.get(); if (!p || !S.pinOk || !D) return; const ses = await API.session(); if (!ses) return;
+  p.users[ses.user.id] = { nom: me().nom, email: ses.user.email, at: ses.access_token, rt: ses.refresh_token, vu: Date.now() }; POSTE.set(p); }
+async function verrouiller(msg) { if (!posteOn()) return; stopCam(); try { await memoriser(); } catch (e) {} store.set("wergui.verrou", "1"); D = null; closeLayer(); S.pinFor = null; S.pin = ""; ecranVerrou(msg); }
+function ecranVerrou(msg, err) { stopCam(); const p = POSTE.get() || { users: {} }, us = Object.entries(p.users).sort((a, b) => a[1].nom.localeCompare(b[1].nom)), u = S.pinFor && p.users[S.pinFor];
+  $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><svg width="34" height="34" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="currentColor" opacity=".16"/><path d="M12 6h6v6h6v6h-6v6h-6v-6H6v-6h6z" fill="currentColor"/></svg><b>Wergui SN</b></div>
+    ${u ? `<h1>${esc(u.nom)}</h1><p class="muted">Tapez votre code PIN.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ""}
+      <div class="pindots" aria-live="polite" aria-label="${S.pin.length} chiffres saisis">${[0, 1, 2, 3, 4, 5].map(i => `<span class="${i < S.pin.length ? "on" : ""} ${i >= 4 ? "opt" : ""}"></span>`).join("")}</div>
+      <div class="pinpad">${["1","2","3","4","5","6","7","8","9","del","0","ok"].map(k => k === "del" ? `<button data-pin="del" aria-label="Effacer">⌫</button>` : k === "ok" ? `<button data-pin="ok" class="okp" ${S.pin.length >= 4 ? "" : "disabled"}>OK</button>` : `<button data-pin="${k}">${k}</button>`).join("")}</div>
+      <button class="linkbtn" data-act="pinretour">Changer d'utilisateur</button>`
+    : `<h1>Qui êtes-vous ?</h1>${msg ? `<p class="info">${esc(msg)}</p>` : ""}${err ? `<p class="err">${esc(err)}</p>` : ""}
+      <div class="pinusers">${us.map(([id, x]) => `<button class="pick" data-pinuser="${id}"><span class="av">${initiales(x.nom)}</span><span class="nm"><b>${esc(x.nom)}</b><small>${esc(x.email)}</small></span></button>`).join("") || '<p class="muted">Aucun membre mémorisé sur ce poste.</p>'}</div>
+      <button class="linkbtn" data-act="autrecompte">Autre utilisateur (e-mail et mot de passe)</button>`}
+    <p class="muted" style="font-size:.8rem">Poste partagé de la pharmacie · <a href="../confidentialite/">Confidentialité</a></p></div></div>`; }
+async function deverrouiller() { const p = POSTE.get(), uid = S.pinFor, u = p && p.users[uid], pin = S.pin; if (!u) return ecranVerrou();
+  S.pin = ""; $("#root .pinpad") && $("#root .pinpad").classList.add("busy");
+  try {
+    const cur = await API.session();
+    if (cur && p.users[cur.user.id]) { Object.assign(p.users[cur.user.id], { at: cur.access_token, rt: cur.refresh_token }); POSTE.set(p); }
+    if (!cur || cur.user.id !== uid) { const { error } = await sb.auth.setSession({ access_token: u.at, refresh_token: u.rt }); if (error) throw Object.assign(new Error("session"), { session: true }); }
+    const r = await rpc("verifier_pin", { p_pin: pin });
+    if (r.ok) { store.set("wergui.verrou", ""); S.pinFor = null; S.pid = p.pid; LAST = Date.now(); return boot(); }
+    if (r.aucun) { delete p.users[uid]; POSTE.set(p); S.pinFor = null; return ecranVerrou(null, "Ce membre n'a plus de code PIN : connectez-vous avec l'e-mail."); }
+    return ecranVerrou(null, r.bloque_min ? `Trop d'erreurs : code bloqué ${r.bloque_min} min. Utilisez l'e-mail et le mot de passe.` : `Code incorrect. Encore ${pl(r.reste, "essai")}.`);
+  } catch (e) {
+    if (e.session || /refresh|session|jwt/i.test(e.message || "")) { const q2 = POSTE.get(); delete q2.users[uid]; POSTE.set(q2); S.pinFor = null; return ecranVerrou(null, "Session expirée pour ce membre : reconnectez-vous avec l'e-mail et le mot de passe."); }
+    ecranVerrou(null, errMsg(e)); } }
+function pinTouche(k) { if (k === "ok") return S.pin.length >= 4 ? deverrouiller() : null; if (k === "del") S.pin = S.pin.slice(0, -1); else if (S.pin.length < 6) S.pin += k; ecranVerrou(); }
+const posteSection = () => { const p = POSTE.get(), ici = p && p.pid === S.pid;
+  return `<section class="panel"><header><div><h2>Poste partagé</h2><p>Sur l'ordinateur ou la tablette du comptoir, chaque membre passe à sa session avec son code PIN (4 à 6 chiffres), sans retaper son e-mail. Chaque vente reste au nom de la bonne personne.</p></div></header>
+  ${ici ? `<p class="info">Cet appareil est le poste partagé de la pharmacie. Il se verrouille après ${pl(+R().deconnexion_min || 10, "minute")} sans activité.</p>
+    <div>${Object.entries(p.users).map(([id, x]) => `<div class="set"><div class="grow"><b>${esc(x.nom)}</b><small>${esc(x.email)}</small></div><button class="btn sm" data-posterm="${id}">Retirer du poste</button></div>`).join("") || '<p class="muted">Personne n\'est encore mémorisé. Chaque membre se connecte une fois ici et crée son code PIN dans « Mon compte ».</p>'}</div>
+    <div class="row"><button class="btn" data-act="posteoff">Ne plus utiliser cet appareil comme poste partagé</button></div>`
+  : `<p class="muted">À activer seulement sur l'appareil qui reste à la pharmacie, jamais sur un téléphone personnel.</p><div class="row"><button class="btn pri" data-act="posteon">Faire de cet appareil le poste de la pharmacie</button></div>`}</section>`; };
 
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
@@ -213,7 +256,7 @@ async function onForm(form) {
   const v = id => (document.getElementById(id) || {}).value?.trim() || "", btn = form.querySelector("button");
   const k = form.dataset.form;
   await run(btn, async () => {
-    if (k === "login") { await API.signIn(v("ae"), document.getElementById("ap").value); await boot(); }
+    if (k === "login") { store.set("wergui.verrou", ""); await API.signIn(v("ae"), document.getElementById("ap").value); await boot(); }
     else if (k === "creer") { const r = await API.signUp(v("ce"), document.getElementById("cp").value, { nom: v("cn"), intent: "creer", cgu_acceptees: new Date().toISOString(), pharmacie: { nom: v("cph"), ville: v("cv"), telephone: v("ct") } }); if (r.session) await boot(); else authScreen("login", "Compte créé. Ouvrez l'e-mail que nous venons d'envoyer et cliquez sur le lien pour l'activer, puis connectez-vous."); }
     else if (k === "rejoindre") { const r = await API.signUp(v("re"), document.getElementById("rp").value, { nom: v("rn"), intent: "rejoindre", cgu_acceptees: new Date().toISOString() }); if (r.session) await boot(); else authScreen("login", "Compte créé. Activez-le avec le lien reçu par e-mail, puis donnez votre e-mail au titulaire de la pharmacie."); }
     else if (k === "oubli") { await API.recover(v("oe")); authScreen("login", "Si un compte existe avec cet e-mail, vous allez recevoir un lien pour changer le mot de passe."); }
@@ -237,6 +280,7 @@ async function boot() {
   if (!sb) { $("#root").innerHTML = `<div class="auth"><div class="authcard"><div class="logo"><b>Wergui SN</b></div><h1>Bientôt disponible</h1><p class="muted">L'application est en cours de mise en service. En attendant, essayez la démo.</p><a class="btn pri" href="../demo/" style="text-align:center;text-decoration:none">Voir la démo</a></div></div>`; return; }
   const ses = await API.session();
   if (!ses) { authScreen(location.hash === "#creer" ? "creer" : location.hash === "#rejoindre" ? "rejoindre" : "login"); return; }
+  if (posteOn() && store.get("wergui.verrou") === "1") { ecranVerrou(); return; }
   S.user = ses.user;
   S.mems = await API.memberships(S.user.id);
   if (!S.mems.length) {
@@ -257,12 +301,15 @@ async function boot() {
   try { S.admin = await API.suisAdmin(); } catch (e) { S.admin = false; }
   D = await API.load(S.pid); computeVJ(); S.invCat = (D.rayons[0] || {}).id || ""; S.couv = R().couverture_jours;
   if (location.hash === "#console" && S.admin) S.view = "console";
-  shell(); render();
+  try { S.pinOk = await API.aUnPin(); } catch (e) { S.pinOk = false; }
+  shell(); render(); memoriser().catch(() => {});
 }
 function compte() {
   const m = me();
   layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Mon compte"><div class="top"><div><h2>${esc(m.nom)}</h2><p>${esc(S.user.email)} · ${roleName(m.role)}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
   ${S.mems.length > 1 ? `<div class="field"><label>Pharmacie</label><div style="display:flex;flex-direction:column;gap:8px">${S.phs.map(p => `<button class="pick" data-pid="${p.id}" aria-current="${p.id === S.pid}"><span class="nm"><b>${esc(p.nom)}</b><small>${esc(p.ville || "")}</small></span></button>`).join("")}</div></div>` : ""}
+  ${posteOn() && S.pinOk ? `<div class="row"><button class="btn pri" data-act="verrou">Changer d'utilisateur</button></div>` : ""}
+  <div class="field"><label for="npin">Code PIN ${S.pinOk ? '<span class="st ok">défini</span>' : ""}</label><div class="row"><input id="npin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="4 à 6 chiffres" style="flex:1"><button class="btn" data-act="setpin">${S.pinOk ? "Changer le PIN" : "Créer mon PIN"}</button></div><small class="muted">Sert à reprendre votre session sur le poste partagé de la pharmacie.</small></div>
   <div class="field"><label for="npw">Changer de mot de passe</label><div class="row"><input id="npw" type="password" minlength="8" placeholder="Nouveau mot de passe" style="flex:1"><button class="btn" data-act="setpw">Enregistrer</button></div></div>
   <div class="row"><button class="btn" data-act="refresh">Actualiser les données</button><button class="btn" data-act="mesdonnees">Télécharger mes données</button></div>
   <div class="row"><button class="btn" data-act="logout">Se déconnecter</button><button class="btn" data-act="logoutall">Se déconnecter de tous les appareils</button></div>
@@ -433,6 +480,7 @@ SET.pharmacie = () => { const p = D.ph; return `<section class="panel"><header><
   <div class="field"><label for="cville">Ville</label><input type="text" id="cville" value="${esc(p.ville || "")}"></div><div class="field"><label for="ctel">Téléphone</label><input type="tel" id="ctel" value="${esc(p.telephone || "")}"></div>
   <div class="field"><label for="cwa">WhatsApp du titulaire</label><input type="tel" id="cwa" value="${esc(p.whatsapp || "")}"></div><div class="field full"><label for="cticket">Message en bas des tickets</label><input type="text" id="cticket" value="${esc(p.message_ticket || "")}"></div></div>
   <div class="row"><button class="btn pri" data-act="savepharma">Enregistrer</button></div></section>
+  ${posteSection()}
   <section class="panel"><header><div><h2>Données de la pharmacie</h2><p>Vos données vous appartiennent : téléchargez-les à tout moment (stock avec lots, et toutes les ventes).</p></div></header><div class="row"><button class="btn" data-act="exportph">Exporter en Excel (CSV)</button></div></section>
   <section class="panel"><header><div><h2>Transférer le rôle de titulaire</h2><p>Le nouveau titulaire aura l'accès complet. Vous deviendrez pharmacien adjoint.</p></div></header>
   ${D.membres.filter(m => m.actif && m.user_id !== S.user.id).length ? `<div class="row"><select id="trto" style="flex:1 1 200px">${D.membres.filter(m => m.actif && m.user_id !== S.user.id).map(m => `<option value="${m.user_id}">${esc(m.nom)} · ${roleName(m.role)}</option>`).join("")}</select><button class="btn" data-act="transfert">Transférer</button></div>` : '<p class="muted">Ajoutez d\'abord un membre à l\'équipe.</p>'}</section>
@@ -698,6 +746,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.close && e.target === t) return closeLayer();
   if (d.auth) return authScreen(d.auth);
   if (d.pid) { S.pid = d.pid; store.set("wergui.pid", d.pid); closeLayer(); return boot(); }
+  if (!D && d.pinuser) { S.pinFor = d.pinuser; S.pin = ""; return ecranVerrou(); }
+  if (!D && d.pin) return pinTouche(d.pin);
+  if (!D && d.act === "pinretour") { S.pinFor = null; S.pin = ""; return ecranVerrou(); }
+  if (!D && d.act === "autrecompte") return authScreen("login");
   if (!D) { if (d.act === "logout") { await API.signOut(); S.pid = null; return authScreen("login"); } if (d.act === "boot") return run(t, boot); return; }
   if (d.go) { if (d.tab) S.perTab = d.tab; if (d.mode) S.scanMode = d.mode; return go(d.go); }
   if (d.prod) return fiche(d.prod);
@@ -715,6 +767,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.prio) { const l = D.lots.find(x => x.id === d.prio); return run(t, async () => { await API.priorite(l.id, !l.prioritaire); l.prioritaire = !l.prioritaire; render(true); toast(l.prioritaire ? "Ce lot sera proposé en premier au comptoir." : "Priorité retirée."); }); }
   if (d.smode) { S.scanMode = d.smode; document.querySelectorAll("[data-smode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.smode === S.scanMode)); return V_scanRes(); }
   if (d.stab) { S.setTab = d.stab; return render(true); }
+  if (d.posterm) { const p = POSTE.get(); delete p.users[d.posterm]; POSTE.set(p); render(true); return toast("Membre retiré du poste."); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
   if (d.mkbord) return run(t, async () => { await API.creerBordereau(S.pid, d.mkbord); S.finTab = "assur"; await finReload(); toast(`Bordereau ${d.mkbord} créé : imprimez-le et envoyez-le.`); });
   if (d.bsend) return run(t, async () => { await API.majBordereau(d.bsend, iso(today()), null); await finReload(); toast("Bordereau marqué envoyé."); });
@@ -737,6 +790,11 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   const a = d.act; if (!a) return;
   if (a === "more") return more();
   if (a === "compte") return compte();
+  if (a === "verrou") return verrouiller();
+  if (a === "setpin") { const v = $("#npin").value.trim(); return run(t, async () => { await API.definirPin(v); S.pinOk = true; await memoriser(); closeLayer(); nav(); toast(posteOn() ? "Code PIN enregistré : vous êtes mémorisé sur ce poste." : "Code PIN enregistré."); }); }
+  if (a === "posteon") return run(t, async () => { POSTE.set({ pid: S.pid, users: {} }); await memoriser(); render(true); toast(S.pinOk ? "Cet appareil est maintenant le poste partagé." : "Poste partagé activé. Créez votre code PIN dans « Mon compte » pour y être mémorisé."); });
+  if (a === "posteoff") { if (!confirmerTexte("Ne plus utiliser cet appareil comme poste partagé ?")) return; POSTE.set(null); store.set("wergui.verrou", ""); render(true); return toast("Poste partagé désactivé sur cet appareil."); }
+  if (a === "logout" && posteOn()) { stopCam(); const p = POSTE.get(); delete p.users[S.user.id]; POSTE.set(p); await API.signOutLocal(); D = null; S.pid = null; closeLayer(); if (Object.keys(p.users).length) { store.set("wergui.verrou", "1"); S.pinFor = null; return ecranVerrou("Vous êtes déconnecté et retiré de ce poste."); } return authScreen("login", "Vous êtes déconnecté."); }
   if (a === "logout") { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); return authScreen("login", "Vous êtes déconnecté."); }
   if (a === "logoutall") { stopCam(); await API.signOutAll(); D = null; S.pid = null; closeLayer(); return authScreen("login", "Déconnecté de tous vos appareils."); }
   if (a === "delcompte") return delCompte();
@@ -775,7 +833,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "addcat") { const v = $("#newcat").value.trim(); if (!v) return toast("Indiquez le nom du rayon.", true); return run(t, async () => { await API.insert("rayons", { pharmacy_id: S.pid, nom: v }); await reload(true); toast(`Rayon « ${v} » ajouté.`); }); }
   if (a === "addfour") { const v = $("#newfour").value.trim(); if (!v) return toast("Indiquez le nom du grossiste.", true); return run(t, async () => { await API.insert("fournisseurs", { pharmacy_id: S.pid, nom: v, delai_jours: 2 }); await reload(true); toast(`${v} ajouté.`); }); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeLayer(); if (e.key === "Enter" && e.target.dataset && e.target.dataset.prod) fiche(e.target.dataset.prod); });
+document.addEventListener("keydown", e => { if (!D && S.pinFor && $("#root .pinpad")) { if (/^[0-9]$/.test(e.key)) return pinTouche(e.key); if (e.key === "Backspace") return pinTouche("del"); if (e.key === "Enter") return pinTouche("ok"); } if (e.key === "Escape") closeLayer(); if (e.key === "Enter" && e.target.dataset && e.target.dataset.prod) fiche(e.target.dataset.prod); });
 document.addEventListener("input", e => { const t = e.target;
   if (t.id === "cq") { S.q = t.value; return fillRes(); }
   if (t.id === "sq") { S.q = t.value; return fillStock(); }
@@ -796,5 +854,5 @@ document.addEventListener("change", async e => { const t = e.target; if (!D) ret
   if (t.id === "orgs") { const list = t.value.split(",").map(x => x.trim()).filter(Boolean); return run(null, async () => { await saveReglages({ organismes: list.length ? list : ["IPM"] }); toast("Organismes enregistrés."); }); }
   if (t.dataset.paym) { const m = t.dataset.paym, cur = R().paiements, next = t.checked ? [...new Set(cur.concat(m))] : cur.filter(x => x !== m); if (!next.length) { t.checked = true; return toast("Gardez au moins un moyen de paiement.", true); } return run(null, async () => { await saveReglages({ paiements: next }); toast(`${m} : ${t.checked ? "accepté" : "désactivé"} en caisse.`); }); } });
 
-if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === "PASSWORD_RECOVERY") authScreen("nouveau"); });
+if (sb) sb.auth.onAuthStateChange((ev, ses) => { if (ev === "PASSWORD_RECOVERY") authScreen("nouveau"); const p = POSTE.get(); if (ses && p && p.users[ses.user.id]) { Object.assign(p.users[ses.user.id], { at: ses.access_token, rt: ses.refresh_token }); POSTE.set(p); } });
 boot().catch(e => { console.error(e); $("#root").innerHTML = `<div class="auth"><div class="authcard"><h1>Erreur de chargement</h1><p class="err">${esc(errMsg(e))}</p><button class="btn pri" onclick="location.reload()">Réessayer</button></div></div>`; });

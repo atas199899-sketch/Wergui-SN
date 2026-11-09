@@ -290,3 +290,17 @@ input[type=text],input[type=search],input[type=number],input[type=date],input[ty
 input:not([type]),input[type=email],input[type=password]{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-width:0;font:inherit;color:inherit}
 .authcard input{min-height:46px;padding:10px 12px;font-size:16px}
 .authcard .field label{color:var(--muted);font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+/* poste partagé : choix de l'utilisateur et clavier PIN */
+.pinusers{display:flex;flex-direction:column;gap:8px}
+.pinusers .pick{display:flex;align-items:center;gap:12px}
+.pinusers .av{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);color:var(--ink);font-weight:700}
+.pindots{display:flex;justify-content:center;gap:12px;margin:8px 0 4px}
+.pindots span{width:14px;height:14px;border-radius:50%;border:2px solid var(--ink);background:transparent}
+.pindots span.on{background:var(--ink)}
+.pindots span.opt:not(.on){opacity:.35}
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:300px;margin:8px auto;width:100%}
+.pinpad button{font:inherit;font-size:1.5rem;font-weight:600;min-height:60px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:inherit;cursor:pointer;font-variant-numeric:tabular-nums}
+.pinpad button:active{background:var(--sunk)}
+.pinpad .okp{background:var(--ink);color:var(--ink-fg);border-color:var(--ink);font-size:1.1rem}
+.pinpad .okp:disabled{opacity:.4;cursor:default}
+.pinpad.busy{opacity:.5;pointer-events:none}
