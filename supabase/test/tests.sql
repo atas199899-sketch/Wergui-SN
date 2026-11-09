@@ -1,4 +1,4 @@
--- Tests locaux (base jetable) : psql -v ON_ERROR_STOP=1 -f stub_supabase.sql -f ../migrations/001_init.sql -f tests.sql
+-- Tests locaux (base jetable) : psql -v ON_ERROR_STOP=1 -f stub_supabase.sql -f ../migrations/00*.sql -f tests.sql
 \set QUIET on
 insert into auth.users (id,email) values
  ('00000000-0000-0000-0000-00000000000a','titulaire@ex.sn'),
@@ -104,6 +104,56 @@ select public.admin_definir_abonnement(:'p','officine','suspendu',null);
 select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id":"%s","quantite":1}]'',''Espèces'',0,null)',:'p',:'prod'),'abonnement suspendu : ventes bloquées');
 select pg_temp.ok((select count(*) from produits where pharmacy_id=:'p')>=1,'abonnement suspendu : les données restent consultables');
 select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
+
+-- Finances (formule Officine)
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.ouvrir_caisse(:'p',10000) as caisse \gset
+select pg_temp.echoue(format('select public.ouvrir_caisse(%L,0)',:'p'),'une seule caisse ouverte à la fois');
+insert into depenses (pharmacy_id,libelle,categorie,montant) values (:'p','Carburant livraison','Transport',500);
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select public.enregistrer_vente(:'p',('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Espèces',0,null);
+select public.enregistrer_vente(:'p',('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Wave',0,null);
+select pg_temp.ok(public.caisse_attendue(:'p') is null,'vendeur : montant attendu caché (clôture à l''aveugle)');
+select pg_temp.ok((select count(*) from caisses where statut='ouverte')=1,'vendeur : voit que la caisse est ouverte');
+select pg_temp.ok((select count(*) from depenses)=0 and (select count(*) from factures)=0,'vendeur : dépenses et factures invisibles');
+select pg_temp.echoue(format('insert into depenses (pharmacy_id,libelle,montant) values (%L,''x'',1)',:'p'),'vendeur : saisie de dépense refusée');
+select pg_temp.echoue(format('select * from public.resultat_mois(%L,current_date)',:'p'),'vendeur : résultat du mois refusé');
+select pg_temp.echoue(format('select public.creer_bordereau(%L,''CMU'')',:'p'),'vendeur : bordereau refusé');
+select pg_temp.ok(public.fermer_caisse(:'p',10000) is null,'vendeur : clôture sans voir l''écart');
+reset role;
+select pg_temp.ok((select attendu=10100 and ecart=-100 from caisses where id=:'caisse'),'caisse : attendu = fond + espèces - dépenses (10 000 + 600 - 500), écart -100');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.ouvrir_caisse(:'p',5000);
+select pg_temp.ok(public.caisse_attendue(:'p')=5000,'titulaire : voit le montant attendu');
+select pg_temp.ok(public.fermer_caisse(:'p',5200)=200,'titulaire : écart renvoyé à la clôture');
+-- assurances
+select public.creer_bordereau(:'p','CMU') as bord \gset
+select pg_temp.ok((select montant from bordereaux where id=:'bord')=432 and (select bordereau_id from ventes where id=:'v2')=:'bord','bordereau CMU : 432 F, vente rattachée');
+select pg_temp.echoue(format('select public.creer_bordereau(%L,''CMU'')',:'p'),'pas de second bordereau pour les mêmes ventes');
+select public.maj_bordereau(:'bord',current_date,400);
+select pg_temp.echoue(format('select public.maj_bordereau(%L,null,100)',:'bord'),'encaissement au-delà du montant refusé');
+select pg_temp.ok((select paye=400 and envoye_le=current_date from bordereaux where id=:'bord'),'bordereau envoyé et encaissé en partie');
+-- grossistes
+select id as fact, montant as fmont from factures where commande_id=:'c' \gset
+select pg_temp.ok(:fmont=12600,'facture créée à la réception (30 x 420 F)');
+reset role; update produits set fournisseur_id=(select fournisseur_id from commandes where id=:'c') where id=:'prod';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.sortir_lot(:'lot_long','retour');
+select disponible as dispo from public.avoirs_grossistes(:'p') where fournisseur_id=(select fournisseur_id from commandes where id=:'c') \gset
+select pg_temp.ok(:dispo>0,'avoir disponible après un retour grossiste');
+select pg_temp.echoue(format('select public.payer_facture(%L,0,%s)',:'fact',:dispo+1),'avoir au-delà du disponible refusé');
+select public.payer_facture(:'fact',1000,:dispo);
+select pg_temp.echoue(format('select public.payer_facture(%L,99999,0)',:'fact'),'paiement au-delà du reste refusé');
+select pg_temp.ok((select paye=1000+:dispo and avoir_utilise=:dispo from factures where id=:'fact'),'facture payée en partie avec l''avoir');
+select pg_temp.ok((select disponible from public.avoirs_grossistes(:'p') where fournisseur_id=(select fournisseur_id from commandes where id=:'c'))=0,'avoir consommé');
+-- résultat
+select pg_temp.ok((select ventes>0 and depenses=500 and resultat=marge-pertes-depenses from public.resultat_mois(:'p',current_date)),'résultat du mois calculé en base');
+-- formule Petite officine
+select public.admin_definir_abonnement(:'p','petite','actif',current_date+30);
+select pg_temp.echoue(format('select public.ouvrir_caisse(%L,0)',:'p'),'Petite officine : caisse réservée à la formule Officine');
+select pg_temp.echoue(format('insert into depenses (pharmacy_id,libelle,montant) values (%L,''x'',1)',:'p'),'Petite officine : dépenses réservées à la formule Officine');
+select public.admin_definir_abonnement(:'p','officine','actif',current_date+30);
+reset role;
 
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');

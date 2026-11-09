@@ -60,7 +60,8 @@ const API = {
     const couts = await rpc("couts_achat", { p: pid }), cm = new Map(couts.map(c => [c.id, c.prix_achat])); // vide sans le droit « Prix d'achat »
     produits.forEach(p => p.prix_achat = cm.get(p.id) || 0);
     const vids = new Set(ventes.map(v => v.id));
-    return { ph, membres, rayons, fours, produits, lots, ventes, lignes: lignes.filter(l => vids.has(l.vente_id)), mvts, cmds, cmdLignes };
+    let caisse = null; try { caisse = (await q(sb.from("caisses").select("id,fond,ouverte_par,ouverte_le,statut").eq("pharmacy_id", pid).eq("statut", "ouverte")))[0] || null; } catch (e) {}
+    return { caisse, ph, membres, rayons, fours, produits, lots, ventes, lignes: lignes.filter(l => vids.has(l.vente_id)), mvts, cmds, cmdLignes };
   },
   signOutAll: () => sb.auth.signOut({ scope: "global" }),
   supprimerCompte: (avecPharmacies) => rpc("supprimer_mon_compte", { p_supprimer_pharmacies: avecPharmacies }),
@@ -82,14 +83,37 @@ const API = {
   insert: (t, row) => q(sb.from(t).insert(row).select(COLS[t] || "*").single()),
   update: (t, id, patch) => q(sb.from(t).update(patch).eq("id", id).select(COLS[t] || "*").single()),
   remove: (t, id) => q(sb.from(t).delete().eq("id", id)),
-  priorite: (lot, v) => q(sb.from("lots").update({ prioritaire: v }).eq("id", lot))
+  priorite: (lot, v) => q(sb.from("lots").update({ prioritaire: v }).eq("id", lot)),
+  ouvrirCaisse: (p, fond) => rpc("ouvrir_caisse", { p, p_fond: fond }),
+  fermerCaisse: (p, compte) => rpc("fermer_caisse", { p, p_compte: compte }),
+  caisseAttendue: p => rpc("caisse_attendue", { p }),
+  creerBordereau: (p, org) => rpc("creer_bordereau", { p, p_organisme: org }),
+  majBordereau: (b, envoye, encaisse) => rpc("maj_bordereau", { b, p_envoye: envoye, p_encaisse: encaisse }),
+  payerFacture: (f, montant, avoir) => rpc("payer_facture", { f, p_montant: montant, p_avoir: avoir }),
+  ventesBordereau: b => q(sb.from("ventes").select("id,created_at,part_assurance").eq("bordereau_id", b).order("created_at")),
+  ventesDepuis: (p, d) => all("ventes", b => b.eq("pharmacy_id", p).gte("created_at", d).order("created_at")),
+  async finances(p) {
+    const now = new Date(), m0 = new Date(now.getFullYear(), now.getMonth(), 1), m1 = new Date(now.getFullYear(), now.getMonth() - 1, 1), d = x => iso(x);
+    const [caisses, depenses, bordereaux, factures, avoirs, attendu, resA, resB, nonFact] = await Promise.all([
+      q(sb.from("caisses").select("*").eq("pharmacy_id", p).order("ouverte_le", { ascending: false }).limit(40)),
+      q(sb.from("depenses").select("*").eq("pharmacy_id", p).gte("date_depense", d(new Date(now.getFullYear(), now.getMonth() - 3, 1))).order("date_depense", { ascending: false }).order("created_at", { ascending: false })),
+      q(sb.from("bordereaux").select("*").eq("pharmacy_id", p).order("created_at", { ascending: false })),
+      q(sb.from("factures").select("*").eq("pharmacy_id", p).order("echeance")),
+      rpc("avoirs_grossistes", { p }), rpc("caisse_attendue", { p }),
+      rpc("resultat_mois", { p, p_debut: d(m0) }), rpc("resultat_mois", { p, p_debut: d(m1) }),
+      all("ventes", b => b.eq("pharmacy_id", p).gt("part_assurance", 0).is("bordereau_id", null))
+    ]);
+    const af = {}; nonFact.forEach(v => { const k = v.organisme || "Assurance", x = af[k] = af[k] || { o: k, m: 0, n: 0 }; x.m += v.part_assurance; x.n++; });
+    const one = r => Object.fromEntries(Object.entries((Array.isArray(r) ? r[0] : r) || {}).map(([k, v]) => [k, +v || 0]));
+    return { caisses, ouverte: caisses.find(c => c.statut === "ouverte") || null, depenses, bordereaux, factures, avoirs, attendu, res: [one(resA), one(resB)], aFacturer: Object.values(af) };
+  }
 };
 
 /* ================================================================ état */
-const S = { user: null, pid: null, phs: [], mems: [], view: "accueil", cart: [], pay: null, remise: 0, org: "", q: "", fcat: "", fst: "", perTab: "perimes", couv: null, cmdQ: {}, invCat: null, inv: {}, setTab: "pharmacie", scanMode: "entree", cur: null, cam: null, scans: [] };
+const S = { user: null, pid: null, phs: [], mems: [], view: "accueil", cart: [], pay: null, remise: 0, org: "", q: "", fcat: "", fst: "", perTab: "perimes", couv: null, cmdQ: {}, invCat: null, inv: {}, setTab: "pharmacie", scanMode: "entree", finTab: "caisse", fin: null, cur: null, cam: null, scans: [] };
 let D = null; // données de la pharmacie ouverte
-const PERMS = [["dash","Voir le tableau de bord et les chiffres du jour","Tableau de bord"],["achat","Voir les prix d'achat et les marges","Prix d'achat"],["remise","Accorder des remises en caisse","Remises"],["per","Retirer des lots périmés et préparer les retours","Retraits et retours"],["recep","Réceptionner les livraisons et entrer du stock","Réceptions"],["cmd","Passer les commandes aux grossistes","Commandes"],["inv","Faire les inventaires","Inventaires"],["prod","Créer et modifier les produits et les prix","Produits et prix"]];
-const ROLES = { adjoint: { n: "Pharmacien adjoint", perm: ["dash","achat","remise","per","recep","cmd","inv","prod"] }, vendeur: { n: "Vendeur", perm: ["per","recep"] }, stagiaire: { n: "Stagiaire", perm: [] } };
+const PERMS = [["dash","Voir le tableau de bord et les chiffres du jour","Tableau de bord"],["achat","Voir les prix d'achat et les marges","Prix d'achat"],["remise","Accorder des remises en caisse","Remises"],["per","Retirer des lots périmés et préparer les retours","Retraits et retours"],["recep","Réceptionner les livraisons et entrer du stock","Réceptions"],["cmd","Passer les commandes aux grossistes","Commandes"],["inv","Faire les inventaires","Inventaires"],["prod","Créer et modifier les produits et les prix","Produits et prix"],["fin","Voir les finances et clôturer la caisse","Finances"]];
+const ROLES = { adjoint: { n: "Pharmacien adjoint", perm: ["dash","achat","remise","per","recep","cmd","inv","prod","fin"] }, vendeur: { n: "Vendeur", perm: ["per","recep"] }, stagiaire: { n: "Stagiaire", perm: [] } };
 const permOf = r => Object.fromEntries(PERMS.map(([k]) => [k, (ROLES[r] || { perm: [] }).perm.includes(k)]));
 const me = () => D && D.membres.find(m => m.user_id === S.user.id);
 const isTit = () => me() && me().role === "titulaire";
@@ -133,14 +157,14 @@ const sugList = () => D.produits.filter(p => p.actif && sugg(p) > 0);
 const nomMembre = uid => (D.membres.find(m => m.user_id === uid) || {}).nom || "—";
 
 /* ================================================================ icônes et navigation */
-const ICO = { accueil: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>', caisse: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h4M14 13h3M7 17h4M14 17h3"/>', scanner: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/>', stock: '<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>', peremption: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>', commandes: '<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', inventaire: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10l2 2 4-4M9 16h6"/>', parametres: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>', console: '<path d="M4 5h16v10H4zM8 19h8M12 15v4"/>', deconnexion: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>', abonnement: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>', plus: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>' };
+const ICO = { accueil: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>', caisse: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h4M14 13h3M7 17h4M14 17h3"/>', scanner: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/>', stock: '<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>', peremption: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>', commandes: '<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', inventaire: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10l2 2 4-4M9 16h6"/>', parametres: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>', finances: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', console: '<path d="M4 5h16v10H4zM8 19h8M12 15v4"/>', deconnexion: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>', abonnement: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>', plus: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>' };
 const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[k]}</svg>`;
-const SHORT = { accueil: "Accueil", caisse: "Caisse", scanner: "Scanner", stock: "Stock", peremption: "Péremptions", commandes: "Commandes", inventaire: "Inventaire", parametres: "Paramètres", abonnement: "Abonnement", console: "Console" };
+const SHORT = { accueil: "Accueil", caisse: "Caisse", scanner: "Scanner", stock: "Stock", peremption: "Péremptions", commandes: "Commandes", inventaire: "Inventaire", finances: "Finances", parametres: "Paramètres", abonnement: "Abonnement", console: "Console" };
 function navItems() {
   const per = perimes().length + sous(0, 30).length, sg = can("cmd") ? sugList().length : 0, rec = D.cmds.length;
-  const all = [["accueil","Tableau de bord"],["caisse","Caisse"],["scanner","Scanner"],["stock","Stock"],["peremption","Péremptions",per],["commandes","Commandes",sg + rec],["inventaire","Inventaire"],["parametres","Paramètres"],["abonnement","Abonnement"]];
+  const all = [["accueil","Tableau de bord"],["caisse","Caisse"],["scanner","Scanner"],["stock","Stock"],["peremption","Péremptions",per],["commandes","Commandes",sg + rec],["inventaire","Inventaire"],["finances","Finances"],["parametres","Paramètres"],["abonnement","Abonnement"]];
   if (S.admin) all.push(["console","Console Wergui SN"]);
-  const ok = { accueil: can("dash"), commandes: can("cmd") || can("recep"), inventaire: can("inv"), parametres: isTit(), abonnement: isTit() };
+  const ok = { accueil: can("dash"), finances: can("fin"), commandes: can("cmd") || can("recep"), inventaire: can("inv"), parametres: isTit(), abonnement: isTit() };
   return all.filter(i => ok[i[0]] !== false);
 }
 const mainTabs = () => can("dash") ? ["accueil","caisse","scanner","stock"] : ["caisse","scanner","stock","peremption"];
@@ -168,7 +192,7 @@ let LAST = Date.now();
 ["click","keydown","touchstart","scroll"].forEach(ev => document.addEventListener(ev, () => { LAST = Date.now(); }, { passive: true }));
 setInterval(async () => { if (!D) return; const min = +R().deconnexion_min || 0; if (min && Date.now() - LAST > min * 60000) { stopCam(); await API.signOut(); D = null; S.pid = null; closeLayer(); authScreen("login", `Déconnecté après ${min} minutes d'inactivité.`); } }, 30000);
 function confirmerTexte(t) { return S._confirm === t ? (S._confirm = null, true) : (S._confirm = t, toast(t + " Touchez à nouveau pour confirmer."), false); }
-function go(v) { S.view = v; S.q = ""; closeLayer(); render(); }
+function go(v) { S.view = v; S.q = ""; if (v === "finances") S.fin = null; closeLayer(); render(); }
 const head = (t, s, right = "") => `<div class="top"><div><h1>${t}</h1><p>${s}</p></div><div class="row">${right}</div></div>`;
 async function reload(keep) { D = await API.load(S.pid); computeVJ(); if (!S.invCat) S.invCat = (D.rayons[0] || {}).id || ""; render(keep); }
 
@@ -286,7 +310,7 @@ V.accueil = () => {
 const brut = () => S.cart.reduce((s, c) => s + c.q * byId(c.pid).prix_vente, 0);
 const net = () => Math.round(brut() * (100 - S.remise) / 100);
 V.caisse = () => { const top = Object.entries(VJ).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => byId(id)).filter(Boolean), vjr = ventesJour();
-  return head("Caisse", "Les lots qui périment en premier sortent en premier. Un lot périmé ne peut pas être vendu.", `<button class="btn" data-go="scanner" data-mode="vente">Scanner une boîte</button>`) +
+  return head("Caisse", "Les lots qui périment en premier sortent en premier. Un lot périmé ne peut pas être vendu.", `<button class="btn" data-go="scanner" data-mode="vente">Scanner une boîte</button>`) + caissePanel() +
   `<div class="grid2"><section class="panel"><input type="search" id="cq" class="search" placeholder="Nom du médicament" value="${esc(S.q)}" autocomplete="off" aria-label="Rechercher un produit">
    ${top.length ? `<div class="chips">${top.map(p => `<button class="chip" data-add="${p.id}">${esc(p.nom)}</button>`).join("")}</div>` : ""}
    <div class="tw"><table><thead><tr><th>Produit</th><th class="r">Stock</th><th class="r">Prix</th><th></th></tr></thead><tbody id="res"></tbody></table></div></section>
@@ -445,7 +469,7 @@ async function saveReglages(patch) { const reglages = Object.assign({}, R(), pat
 
 const FORMULES = [
   { k: "petite", n: "Petite officine", prix: 15000, inst: 35000, items: ["Toutes les fonctions de base : stock par lot, alertes de péremption, scanner, caisse, commandes, inventaire", "1 membre en plus du titulaire", "Jusqu'à 1 500 références"] },
-  { k: "officine", n: "Officine", prix: 25000, inst: 50000, items: ["Tout ce qui est dans Petite officine", "Tiers payant : IPM, mutuelles, CMU", "Équipe illimitée et droits sur mesure", "Références illimitées"] }];
+  { k: "officine", n: "Officine", prix: 25000, inst: 50000, items: ["Tout ce qui est dans Petite officine", "Tiers payant : IPM, mutuelles, CMU", "Finances : clôture de caisse, bordereaux d'assurance, factures grossistes, dépenses, résultat du mois et export comptable", "Équipe illimitée et droits sur mesure", "Références illimitées"] }];
 V.abonnement = () => { const p = D.ph, r = essaiReste(), cur = FORMULES.find(f => f.k === p.formule);
   const etat = p.statut === "suspendu" ? '<span class="st bad">Suspendu</span>' : p.statut === "essai" ? `<span class="st acc">Essai${r != null ? (r >= 0 ? " · " + pl(r, "jour restant", "jours restants") : " terminé") : ""}</span>` : '<span class="st ok">Actif</span>';
   return head("Abonnement", "Prix TTC, payés chaque mois par Wave ou Orange Money. En paiement annuel : 2 mois et l'installation offerts.") +
@@ -550,6 +574,124 @@ async function scanPhoto(file) { const st = $("#camst"); st.textContent = "Lectu
     if (!r.length) { st.textContent = "Aucun code lu. Rapprochez-vous (10–15 cm), avec une bonne lumière."; return; } st.textContent = "Code lu sur la photo."; onCode(r[0].rawValue, fmtName(r[0].format)); }
   catch (e) { st.textContent = "Le lecteur n'a pas pu se charger (pas d'internet ?)."; } }
 
+/* ================================================================ finances (formule Officine) */
+const DEPCATS = ["Loyer","Salaires","Électricité et eau","Gardiennage","Transport","Fournitures","Impôts et taxes","Autre"];
+const DEPMODES = ["Espèces caisse","Wave","Orange Money","Banque","Chèque"];
+const moisDe = d => new Date(d.getFullYear(), d.getMonth(), 1);
+const nomMois = d => d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+const resteF = x => x.montant - x.paye, resteB = b => b.montant - b.paye;
+const ageJ = d => d ? -dj(d) : 0;
+function finCharger() { if (S.finLoading) return; S.finLoading = true;
+  API.finances(S.pid).then(r => { S.fin = r; S.finLoading = false; if (S.view === "finances") render(true); }).catch(e => { S.finLoading = false; toast(errMsg(e), true); }); }
+async function finReload() { S.fin = await API.finances(S.pid); D.caisse = S.fin.ouverte; render(true); }
+function caissePanel() { if (!premium()) return "";
+  const c = D.caisse;
+  if (!c) return `<section class="panel caissebar"><div class="row" style="justify-content:space-between"><div><b>Caisse fermée</b><small class="muted" style="display:block">Ouvrez la caisse en début de journée avec le fond de caisse.</small></div>
+    <div class="row"><input type="number" id="fond" class="qin" style="width:130px" inputmode="numeric" min="0" placeholder="Fond (F)" aria-label="Fond de caisse"><button class="btn pri" data-act="ouvrircaisse">Ouvrir la caisse</button></div></div></section>`;
+  return `<section class="panel caissebar"><div class="row" style="justify-content:space-between"><div><b>Caisse ouverte</b> <span class="st ok">depuis ${hm(c.ouverte_le)}</span><small class="muted" style="display:block">Par ${esc(nomMembre(c.ouverte_par))} · fond de caisse ${fmt(c.fond)}</small></div>
+    <button class="btn" data-act="cloturer">Clôturer la caisse</button></div></section>`; }
+async function cloturer() { let att = null; if (can("fin")) { try { att = await API.caisseAttendue(S.pid); } catch (e) {} }
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Clôture de caisse"><div class="top"><div><h2>Clôturer la caisse</h2><p>Comptez les espèces du tiroir (fond compris), puis saisissez le total.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  ${att != null ? `<p class="note-box">Espèces attendues : <b class="num">${fmt(att)}</b> (fond + ventes en espèces + part patient des ventes assurance − dépenses payées en espèces).</p>` : `<p class="note-box">Le montant attendu n'est pas affiché : c'est une clôture « à l'aveugle ». Le titulaire verra l'écart éventuel.</p>`}
+  <div class="field"><label for="compte">Espèces comptées (F)</label><input type="number" id="compte" inputmode="numeric" min="0" autofocus></div>
+  <div class="row"><button class="btn pri" data-act="cloturerok">Clôturer</button><button class="btn" data-close="1">Annuler</button></div></div>`, true); }
+
+V.finances = () => {
+  if (!premium()) return head("Finances", "Caisse du jour, créances des assurances, factures des grossistes, dépenses et résultat du mois.") +
+    `<section class="panel"><h2>Disponible avec la formule Officine</h2><p>Clôture de caisse à l'aveugle avec écart, bordereaux pour les IPM, mutuelles et la CMU, suivi des factures et des avoirs des grossistes, dépenses, résultat du mois et export pour le comptable.</p>
+    ${isTit() ? `<div class="row"><button class="btn pri" data-go="abonnement">Voir les formules</button></div>` : "<p class=\"muted\">Parlez-en au titulaire.</p>"}</section>`;
+  if (!S.fin) { finCharger(); return head("Finances", "Chargement…"); }
+  const F = S.fin, T = [["caisse","Caisse"],["assur","Assurances"],["gross","Grossistes"],["dep","Dépenses"],["res","Résultat"]];
+  const cre = F.bordereaux.reduce((s, b) => s + resteB(b), 0) + F.aFacturer.reduce((s, x) => s + x.m, 0);
+  const avTot = F.avoirs.reduce((s, a) => s + Math.max(0, a.disponible), 0), det = F.factures.reduce((s, x) => s + resteF(x), 0);
+  const r0 = F.res[0] || {};
+  return head("Finances", "Caisse, créances des assurances, dettes grossistes, dépenses et résultat. Un export prêt pour votre comptable.", `<button class="btn" data-act="exportfin">Exporter pour le comptable</button>`) +
+  `<div class="kpis">
+    <button class="kpi" data-ftab="caisse"><span>Caisse ${F.ouverte ? "ouverte" : "fermée"}</span><b class="num">${F.attendu != null ? fmt(F.attendu) : "—"}</b><em>${F.ouverte ? "espèces attendues" : "ouvrez-la depuis la Caisse"}</em></button>
+    <button class="kpi" data-ftab="assur"><span>Les assurances vous doivent</span><b class="num">${fmt(cre)}</b><em>${pl(F.bordereaux.filter(b => resteB(b) && b.envoye_le && ageJ(b.envoye_le) > 60).length, "bordereau en retard", "bordereaux en retard")}</em></button>
+    <button class="kpi" data-ftab="gross"><span>Vous devez aux grossistes</span><b class="num">${fmt(Math.max(0, det - avTot))}</b><em>${pl(F.factures.filter(x => resteF(x) && dj(x.echeance) < 0).length, "facture échue", "factures échues")}</em></button>
+    <button class="kpi" data-ftab="res"><span>Résultat de ${nomMois(moisDe(today())).split(" ")[0]}</span><b class="num">${fmt(r0.resultat)}</b><em>après achats, pertes et dépenses</em></button>
+  </div>
+  <div class="seg" role="group" aria-label="Rubrique">${T.map(([k, l]) => `<button data-ftab="${k}" aria-pressed="${S.finTab === k}">${l}</button>`).join("")}</div>` + FV[S.finTab](); };
+const FV = {};
+FV.caisse = () => { const F = S.fin, c = F.ouverte, vj = c ? D.ventes.filter(v => v.created_at >= c.ouverte_le) : ventesJour();
+  const par = m => vj.filter(v => v.mode === m).reduce((s, v) => s + v.total, 0), patient = vj.filter(v => v.mode === "Assurance").reduce((s, v) => s + v.total - v.part_assurance, 0);
+  const depC = c ? F.depenses.filter(d => d.mode === "Espèces caisse" && d.created_at >= c.ouverte_le).reduce((s, d) => s + d.montant, 0) : 0;
+  const parV = {}; vj.forEach(v => { const k = nomMembre(v.user_id), x = parV[k] = parV[k] || { n: 0, t: 0, e: 0 }; x.n++; x.t += v.total; if (v.mode === "Espèces") x.e += v.total; if (v.mode === "Assurance") x.e += v.total - v.part_assurance; });
+  return `<div class="grid2"><section class="panel"><header><div><h2>${c ? "Caisse ouverte" : "Caisse fermée"}</h2><p>${c ? `Depuis ${hm(c.ouverte_le)} le ${dfr(c.ouverte_le)}, par ${esc(nomMembre(c.ouverte_par))}` : "Ouvrez la caisse depuis l'écran Caisse."}</p></div><span class="st ${c ? "ok" : "n"}">${c ? "Ouverte" : "Fermée"}</span></header>
+    ${c ? `<div class="list"><div class="li"><span>Fond de caisse</span><b class="num">${fmt(c.fond)}</b></div><div class="li"><span>Ventes en espèces</span><b class="num">+ ${fmt(par("Espèces"))}</b></div>
+    <div class="li"><span>Part patient des ventes assurance</span><b class="num">+ ${fmt(patient)}</b></div><div class="li"><span>Dépenses payées en espèces</span><b class="num">− ${fmt(depC)}</b></div>
+    <div class="li"><b>Espèces attendues dans le tiroir</b><b class="num">${fmt(F.attendu)}</b></div></div><div class="row"><button class="btn pri" data-act="cloturer">Clôturer la caisse</button></div>` : ""}</section>
+  <section class="panel"><header><div><h2>Mobile Money et assurances</h2><p>${c ? "Depuis l'ouverture" : "Aujourd'hui"} · à comparer avec vos relevés marchands.</p></div></header>
+    <div class="list">${R().paiements.filter(m => m !== "Espèces" && m !== "Assurance").map(m => `<div class="li"><span>${esc(m)}</span><b class="num">${fmt(par(m))}</b></div>`).join("")}
+    <div class="li"><span>Part assurance, à réclamer</span><b class="num">${fmt(vj.reduce((s, v) => s + (v.part_assurance || 0), 0))}</b></div></div></section></div>
+  <section class="panel"><header><div><h2>Par vendeur</h2><p>Chaque vente est enregistrée au nom de la personne connectée.</p></div></header>
+    <div class="tw"><table><thead><tr><th>Vendeur</th><th class="r">Tickets</th><th class="r">Ventes</th><th class="r">Dont espèces</th></tr></thead><tbody>
+    ${Object.entries(parV).map(([n, x]) => `<tr><td><b>${esc(n)}</b></td><td class="r num">${x.n}</td><td class="r num">${fmt(x.t)}</td><td class="r num">${fmt(x.e)}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">Aucune vente.</td></tr>'}</tbody></table></div></section>
+  <section class="panel"><header><div><h2>Clôtures précédentes</h2><p>Un écart qui revient souvent avec la même personne mérite une discussion.</p></div></header>
+    <div class="tw"><table><thead><tr><th>Jour</th><th>Clôturée par</th><th class="r">Attendu</th><th class="r">Compté</th><th class="r">Écart</th></tr></thead><tbody>
+    ${F.caisses.filter(x => x.statut === "fermee").map(x => `<tr><td class="num">${dfr(x.fermee_le)} ${hm(x.fermee_le)}</td><td>${esc(nomMembre(x.fermee_par))}</td><td class="r num">${fmt(x.attendu)}</td><td class="r num">${fmt(x.compte)}</td><td class="r"><span class="st ${x.ecart < 0 ? "bad" : x.ecart > 0 ? "warn" : "ok"}">${x.ecart ? (x.ecart > 0 ? "+ " : "− ") + fmt(Math.abs(x.ecart)) : "Juste"}</span></td></tr>`).join("") || '<tr><td colspan="5" class="empty">Aucune clôture pour l\'instant.</td></tr>'}</tbody></table></div></section>`; };
+FV.assur = () => { const F = S.fin, orgs = [...new Set(R().organismes.concat(F.aFacturer.map(x => x.o), F.bordereaux.map(b => b.organisme)))];
+  return `<p class="note-box">Chaque vente au tiers payant est mise de côté pour son organisme. Quand vous voulez facturer (en fin de mois, en général), créez le bordereau : il regroupe toutes les ventes pas encore facturées. Suivez ensuite l'envoi et les paiements.</p>` +
+  orgs.map(o => { const bs = F.bordereaux.filter(b => b.organisme === o), af = (F.aFacturer.find(x => x.o === o) || { m: 0, n: 0 }), du = bs.reduce((s, b) => s + resteB(b), 0) + af.m;
+    if (!bs.length && !af.m) return "";
+    return `<section class="panel"><header><div><h2>${esc(o)}</h2><p>${af.m ? `${pl(af.n, "vente")} à facturer : ${fmt(af.m)} · ` : ""}${pl(bs.filter(b => resteB(b)).length, "bordereau")} à encaisser</p></div><div class="row"><b class="num">${fmt(du)}</b>${af.m ? `<button class="btn sm pri" data-mkbord="${esc(o)}">Créer le bordereau</button>` : ""}</div></header>
+    ${bs.length ? `<div class="tw"><table><thead><tr><th>Bordereau</th><th>Créé le</th><th>Statut</th><th class="r">Montant</th><th class="r">Reste dû</th><th></th></tr></thead><tbody>
+    ${bs.map(b => { const r = resteB(b), a = ageJ(b.envoye_le), st = !r ? '<span class="st ok">Payé</span>' : !b.envoye_le ? '<span class="st n">À envoyer</span>' : a > 60 ? `<span class="st bad">En retard · ${a} j</span>` : `<span class="st warn">Envoyé il y a ${a} j</span>`;
+      return `<tr><td class="lot">B-${b.numero}</td><td class="num">${dfr(b.created_at)}</td><td>${st}${b.paye && r ? ` <small>déjà reçu ${fmt(b.paye)}</small>` : ""}</td><td class="r num">${fmt(b.montant)}</td><td class="r num">${fmt(r)}</td>
+      <td class="r"><div class="row" style="justify-content:flex-end;gap:6px"><button class="btn sm" data-bprint="${b.id}">Imprimer</button>${!r ? "" : !b.envoye_le ? `<button class="btn sm pri" data-bsend="${b.id}">Marquer envoyé</button>` : `<button class="btn sm" data-bpay="${b.id}">Paiement reçu</button>`}</div></td></tr>`; }).join("")}</tbody></table></div>` : ""}</section>`; }).join("") || '<section class="panel"><p class="empty">Aucune vente au tiers payant pour l\'instant.</p></section>'; };
+FV.gross = () => { const F = S.fin, fs = D.fours.filter(f => F.factures.some(x => x.fournisseur_id === f.id) || F.avoirs.some(a => a.fournisseur_id === f.id && a.disponible > 0));
+  return `<section class="panel"><header><div><h2>Ajouter une facture</h2><p>Les commandes réceptionnées créent leur facture toutes seules. Ajoutez ici les autres factures.</p></div></header>
+    <div class="form"><div class="field"><label for="ffour">Grossiste</label><select id="ffour">${D.fours.map(f => `<option value="${f.id}">${esc(f.nom)}</option>`).join("")}</select></div>
+    <div class="field"><label for="fnum">N° de facture</label><input id="fnum" autocomplete="off"></div>
+    <div class="field"><label for="fmontant">Montant (F)</label><input type="number" id="fmontant" inputmode="numeric" min="0"></div>
+    <div class="field"><label for="fech">Échéance</label><input type="date" id="fech" value="${iso(new Date(Date.now() + 30 * 864e5))}"></div></div>
+    <div class="row"><button class="btn pri" data-act="addfact">Ajouter la facture</button></div></section>` +
+  fs.map(f => { const xs = F.factures.filter(x => x.fournisseur_id === f.id), av = Math.max(0, (F.avoirs.find(a => a.fournisseur_id === f.id) || {}).disponible || 0), du = xs.reduce((s, x) => s + resteF(x), 0);
+    return `<section class="panel"><header><div><h2>${esc(f.nom)}</h2><p>${pl(xs.filter(x => resteF(x)).length, "facture")} à payer${av ? ` · avoir de retours ${fmt(av)} à déduire` : ""}</p></div><b class="num">${fmt(Math.max(0, du - av))}</b></header>
+    <div class="tw"><table><thead><tr><th>Facture</th><th>Reçue le</th><th>Échéance</th><th class="r">Montant</th><th class="r">Reste</th><th></th></tr></thead><tbody>
+    ${xs.map(x => { const r = resteF(x), d = dj(x.echeance); return `<tr><td class="lot">${esc(x.numero || "—")}</td><td class="num">${dfr(x.date_facture)}</td><td>${!r ? '<span class="st ok">Payée</span>' : d < 0 ? `<span class="st bad">Échue depuis ${-d} j</span>` : d <= 7 ? `<span class="st warn">Dans ${d} j</span>` : `<span class="num">${dfr(x.echeance)}</span>`}</td>
+      <td class="r num">${fmt(x.montant)}</td><td class="r num">${fmt(r)}</td><td class="r"><div class="row" style="justify-content:flex-end;gap:6px">${r ? `<button class="btn sm" data-fpay="${x.id}">Payer</button>` : ""}${!x.paye ? `<button class="btn sm" data-delfact="${x.id}" aria-label="Supprimer la facture">Supprimer</button>` : ""}</div></td></tr>`; }).join("") || '<tr><td colspan="6" class="empty">Aucune facture.</td></tr>'}</tbody></table></div></section>`; }).join(""); };
+FV.dep = () => { const F = S.fin, m0 = iso(moisDe(today())), m1 = iso(moisDe(new Date(today().getFullYear(), today().getMonth() - 1, 1)));
+  return `<section class="panel"><header><div><h2>Ajouter une dépense</h2><p>Une dépense payée en espèces est retirée des espèces attendues dans la caisse.</p></div></header>
+  <div class="form"><div class="field full"><label for="dlib">Libellé</label><input type="text" id="dlib" maxlength="160" placeholder="ex. Facture Senelec, transport livraison…"></div>
+  <div class="field"><label for="dcat">Catégorie</label><select id="dcat">${DEPCATS.map(c => `<option>${c}</option>`).join("")}</select></div>
+  <div class="field"><label for="dmt">Montant (F)</label><input type="number" id="dmt" inputmode="numeric" min="1"></div>
+  <div class="field"><label for="dmode">Payé par</label><select id="dmode">${DEPMODES.map(m => `<option>${m}</option>`).join("")}</select></div>
+  <div class="field"><label for="ddate">Date</label><input type="date" id="ddate" value="${iso(today())}"></div></div>
+  <div class="row"><button class="btn pri" data-act="adddep">Ajouter</button></div></section>
+  <section class="panel"><header><div><h2>Dépenses récentes</h2><p>Ce mois : ${fmt(F.depenses.filter(x => x.date_depense >= m0).reduce((s, x) => s + x.montant, 0))} · mois dernier : ${fmt(F.depenses.filter(x => x.date_depense < m0 && x.date_depense >= m1).reduce((s, x) => s + x.montant, 0))}</p></div></header>
+  <div class="tw"><table><thead><tr><th>Dépense</th><th>Date</th><th>Catégorie</th><th>Payé par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
+  ${F.depenses.map(x => `<tr><td><b>${esc(x.libelle)}</b></td><td class="num">${dfr(x.date_depense)}</td><td>${esc(x.categorie)}</td><td>${esc(x.mode)}</td><td class="r num">${fmt(x.montant)}</td><td class="r"><button class="btn sm" data-deldep="${x.id}">Supprimer</button></td></tr>`).join("") || '<tr><td colspan="6" class="empty">Aucune dépense saisie.</td></tr>'}</tbody></table></div></section>`; };
+FV.res = () => { const [a, b] = S.fin.res, mA = moisDe(today()), mB = new Date(mA.getFullYear(), mA.getMonth() - 1, 1);
+  const row = (l, k, neg) => `<tr><td>${l}</td><td class="r num">${neg ? "− " : ""}${fmt(b[k])}</td><td class="r num">${neg ? "− " : ""}${fmt(a[k])}</td></tr>`;
+  return `<section class="panel"><header><div><h2>Résultat simplifié</h2><p>Ce que la pharmacie a vraiment gagné : ventes, moins le prix d'achat des produits vendus, les produits jetés et les dépenses saisies.</p></div></header>
+  <div class="tw"><table><thead><tr><th>Poste</th><th class="r">${nomMois(mB)}</th><th class="r">${nomMois(mA)} (en cours)</th></tr></thead><tbody>
+  ${row("Ventes", "ventes")}${row("Coût d'achat des produits vendus", "achats", 1)}
+  <tr><td><b>Marge brute</b>${b.ventes ? ` <small>${Math.round(b.marge / b.ventes * 100)} % des ventes le mois dernier</small>` : ""}</td><td class="r num"><b>${fmt(b.marge)}</b></td><td class="r num"><b>${fmt(a.marge)}</b></td></tr>
+  ${row("Produits jetés (péremption)", "pertes", 1)}${row("Dépenses", "depenses", 1)}
+  </tbody><tfoot><tr><td>Résultat</td><td class="r num" style="color:${b.resultat >= 0 ? "var(--ok)" : "var(--bad)"}">${fmt(b.resultat)}</td><td class="r num">${fmt(a.resultat)}</td></tr></tfoot></table></div>
+  ${a.retours || b.retours ? `<p class="muted">Retours aux grossistes (avoirs) : ${fmt(b.retours)} le mois dernier, ${fmt(a.retours)} ce mois.</p>` : ""}
+  <p class="note-box">C'est un résultat de gestion, pas le résultat comptable officiel : amortissements, impôts et charges sociales sont faits par votre comptable. L'export lui donne les ventes, les achats, les dépenses et les créances.</p></section>`; };
+function payModal(kind, id) { const F = S.fin, x = kind === "f" ? F.factures.find(z => z.id === id) : F.bordereaux.find(z => z.id === id), reste = kind === "f" ? resteF(x) : resteB(x);
+  const av = kind === "f" ? Math.min(reste, Math.max(0, (F.avoirs.find(a => a.fournisseur_id === x.fournisseur_id) || {}).disponible || 0)) : 0;
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Paiement"><div class="top"><div><h2>${kind === "f" ? "Payer la facture " + esc(x.numero || "") : "Paiement reçu · B-" + x.numero}</h2><p>${kind === "f" ? esc((D.fours.find(f => f.id === x.fournisseur_id) || { nom: "" }).nom) : esc(x.organisme)} · reste ${fmt(reste)}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+  <div class="form"><div class="field"><label for="pmt">${kind === "f" ? "Montant payé" : "Montant reçu"} (F)</label><input type="number" id="pmt" inputmode="numeric" min="0" value="${reste - av}"></div>
+  ${kind === "f" && av ? `<div class="field"><label for="pav">Avoir déduit (F)</label><input type="number" id="pav" inputmode="numeric" min="0" max="${av}" value="${av}"></div>` : ""}</div>
+  ${kind === "f" && av ? `<p class="note-box">Un avoir de ${fmt(av)} (produits retournés) peut être déduit de cette facture.</p>` : ""}
+  <div class="row"><button class="btn pri" data-payok="${kind}|${x.id}">Enregistrer</button><button class="btn" data-close="1">Annuler</button></div></div>`, true); }
+function imprimerBordereau(id) { const b = S.fin.bordereaux.find(x => x.id === id);
+  API.ventesBordereau(id).then(vs => { $("#print").innerHTML = `<h3>${esc(D.ph.nom)}</h3><div>${esc(D.ph.adresse || "")} ${esc(D.ph.ville || "")} ${esc(D.ph.telephone || "")}</div><hr><div><b>Bordereau B-${b.numero} · ${esc(b.organisme)}</b></div><div>Établi le ${dfr(b.created_at)}</div><hr>
+    ${vs.map(v => `<div class="l"><span>${dfr(v.created_at)} · ticket ${v.id.slice(0, 8)}</span><span>${fmt(v.part_assurance)}</span></div>`).join("")}<hr><div class="l"><b>Total à rembourser</b><b>${fmt(b.montant)}</b></div>`; window.print(); }).catch(e => toast(errMsg(e), true)); }
+async function exporterFinances(btn) { await run(btn, async () => { const F = S.fin, m0 = moisDe(today()), m1 = new Date(m0.getFullYear(), m0.getMonth() - 1, 1), vs = await API.ventesDepuis(S.pid, m1.toISOString());
+  const L = [["Type","Date","Pièce","Libellé","Tiers","Mode","Montant (F)","Reste dû (F)"]];
+  vs.forEach(v => L.push(["Vente", dfr(v.created_at), "T-" + v.id.slice(0, 8), "Ticket de caisse" + (v.remise_pct ? ` (remise ${v.remise_pct} %)` : ""), v.organisme || "Client comptoir", v.mode, v.total, ""]));
+  F.factures.forEach(x => L.push(["Achat", dfr(x.date_facture), x.numero || "", "Facture grossiste" + (x.avoir_utilise ? ` (avoir déduit ${x.avoir_utilise})` : ""), (D.fours.find(f => f.id === x.fournisseur_id) || { nom: "" }).nom, resteF(x) ? "À payer, échéance " + dfr(x.echeance) : "Payée", x.montant, resteF(x)]));
+  F.depenses.forEach(x => L.push(["Dépense", dfr(x.date_depense), "", x.libelle, x.categorie, x.mode, x.montant, ""]));
+  F.bordereaux.forEach(b => L.push(["Créance assurance", dfr(b.created_at), "B-" + b.numero, "Bordereau tiers payant", b.organisme, resteB(b) ? (b.envoye_le ? "Envoyé le " + dfr(b.envoye_le) : "À envoyer") : "Payé", b.montant, resteB(b)]));
+  telecharger(`wergui-comptable-${iso(today()).slice(0, 7)}.csv`, csv(L), "text/csv;charset=utf-8");
+  toast("Fichier pour le comptable téléchargé (ouvrable dans Excel)."); }); }
+
 /* ================================================================ événements */
 document.addEventListener("submit", e => { const f = e.target.closest("form[data-form]"); if (!f) return; e.preventDefault(); onForm(f); });
 document.addEventListener("click", async e => { const t = e.target.closest("button,[data-prod],[data-close]"); if (!t) return; const d = t.dataset;
@@ -573,6 +715,17 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.prio) { const l = D.lots.find(x => x.id === d.prio); return run(t, async () => { await API.priorite(l.id, !l.prioritaire); l.prioritaire = !l.prioritaire; render(true); toast(l.prioritaire ? "Ce lot sera proposé en premier au comptoir." : "Priorité retirée."); }); }
   if (d.smode) { S.scanMode = d.smode; document.querySelectorAll("[data-smode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.smode === S.scanMode)); return V_scanRes(); }
   if (d.stab) { S.setTab = d.stab; return render(true); }
+  if (d.ftab) { S.finTab = d.ftab; return render(true); }
+  if (d.mkbord) return run(t, async () => { await API.creerBordereau(S.pid, d.mkbord); S.finTab = "assur"; await finReload(); toast(`Bordereau ${d.mkbord} créé : imprimez-le et envoyez-le.`); });
+  if (d.bsend) return run(t, async () => { await API.majBordereau(d.bsend, iso(today()), null); await finReload(); toast("Bordereau marqué envoyé."); });
+  if (d.bpay) return payModal("b", d.bpay);
+  if (d.fpay) return payModal("f", d.fpay);
+  if (d.bprint) return imprimerBordereau(d.bprint);
+  if (d.payok) { const [k, id] = d.payok.split("|"), m = Math.max(0, parseInt($("#pmt").value) || 0), av = $("#pav") ? Math.max(0, parseInt($("#pav").value) || 0) : 0;
+    if (!m && !av) return toast("Indiquez un montant.", true);
+    return run(t, async () => { if (k === "f") await API.payerFacture(id, m, av); else await API.majBordereau(id, null, m); closeLayer(); await finReload(); toast(k === "f" ? "Paiement de la facture enregistré." : "Paiement de l'assurance enregistré."); }); }
+  if (d.deldep) { if (!confirmerTexte("Supprimer cette dépense ?")) return; return run(t, async () => { await API.remove("depenses", d.deldep); await finReload(); toast("Dépense supprimée."); }); }
+  if (d.delfact) { if (!confirmerTexte("Supprimer cette facture ?")) return; return run(t, async () => { await API.remove("factures", d.delfact); await finReload(); toast("Facture supprimée."); }); }
   if (d.member !== undefined) return member(d.member);
   if (d.saveuser !== undefined) return saveUser(d.saveuser, t);
   if (d.editprod) return editProd(d.editprod);
@@ -596,6 +749,16 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "refresh") { closeLayer(); return run(t, () => reload()); }
   if (a === "setpw") { const v = $("#npw").value; if (v.length < 8) return toast("8 caractères minimum.", true); return run(t, async () => { await API.setPassword(v); closeLayer(); toast("Mot de passe changé."); }); }
   if (a === "encaisser") return encaisser(t);
+  if (a === "ouvrircaisse") { const f = Math.max(0, parseInt(($("#fond") || {}).value) || 0); return run(t, async () => { await API.ouvrirCaisse(S.pid, f); await reload(true); toast(`Caisse ouverte avec un fond de ${fmt(f)}.`); }); }
+  if (a === "cloturer") return cloturer();
+  if (a === "cloturerok") { const v = $("#compte").value; if (v === "" || +v < 0) return toast("Saisissez le montant compté.", true);
+    return run(t, async () => { const e = await API.fermerCaisse(S.pid, parseInt(v)); closeLayer(); if (S.view === "finances") await finReload(); else await reload(true);
+      toast(e == null ? "Caisse clôturée. Le titulaire verra le résultat." : e === 0 ? "Caisse clôturée : le compte est juste." : `Caisse clôturée : écart de ${e > 0 ? "+ " : "− "}${fmt(Math.abs(e))}.`, e != null && e < 0); }); }
+  if (a === "adddep") { const lib = $("#dlib").value.trim(), m = parseInt($("#dmt").value) || 0; if (!lib) return toast("Indiquez le libellé.", true); if (m <= 0) return toast("Indiquez le montant.", true);
+    return run(t, async () => { await API.insert("depenses", { pharmacy_id: S.pid, libelle: lib, categorie: $("#dcat").value, montant: m, mode: $("#dmode").value, date_depense: $("#ddate").value || iso(today()), user_id: S.user.id }); await finReload(); toast(`Dépense ajoutée : ${fmt(m)}.`); }); }
+  if (a === "addfact") { const m = parseInt($("#fmontant").value) || 0; if (m <= 0) return toast("Indiquez le montant de la facture.", true);
+    return run(t, async () => { await API.insert("factures", { pharmacy_id: S.pid, fournisseur_id: $("#ffour").value, numero: $("#fnum").value.trim() || null, montant: m, ...($("#fech").value ? { echeance: $("#fech").value } : {}) }); await finReload(); toast("Facture ajoutée."); }); }
+  if (a === "exportfin") return exporterFinances(t);
   if (a === "vider") { S.cart = []; return render(true); }
   if (a === "toticket") return $("#ticket").scrollIntoView({ behavior: "smooth", block: "start" });
   if (a === "newprod") return editProd(null);
