@@ -348,6 +348,26 @@ select public.enregistrer_vente_hors_ligne(:'p',gen_random_uuid(),('[{"produit_i
 select pg_temp.ok(true,'règle désactivée par le titulaire : vente acceptée sans caisse');
 reset role;
 
+-- Démo remise à la date du jour
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select pg_temp.echoue(format('select public.admin_rafraichir_demo(%L)',:'p'),'une vraie pharmacie ne peut pas être décalée');
+reset role;
+update pharmacies set demo = true where id = :'p';
+update ventes set created_at = created_at - interval '3 days' where pharmacy_id = :'p';
+select max(created_at) as vmax0, (select min(peremption) from lots where pharmacy_id = :'p' and quantite > 0) as per0 from ventes where pharmacy_id = :'p' \gset
+update caisses set statut = 'fermee', fermee_le = now() where pharmacy_id = :'p' and statut = 'ouverte';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.admin_rafraichir_demo(%L)',:'p'),'réservé aux administrateurs');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.admin_rafraichir_demo(:'p') as r \gset
+reset role;
+select pg_temp.ok((select max(created_at) between now() - interval '25 minutes' and now() from ventes where pharmacy_id = :'p'),'dernière vente ramenée à maintenant');
+select pg_temp.ok((select min(peremption) from lots where pharmacy_id = :'p' and quantite > 0) = :'per0'::date + (:'r'::jsonb->>'jours')::int,'péremptions décalées du même nombre de jours');
+select pg_temp.ok((select count(*) from caisses where pharmacy_id = :'p' and statut = 'ouverte') = 1,'caisse du jour rouverte');
+select pg_temp.ok((select demo from public.admin_pharmacies() where id = :'p'),'console : la démo est signalée');
+update pharmacies set demo = false where id = :'p';
+
+
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');

@@ -9,7 +9,7 @@
 
 ## Mise en service
 
-1. Créer un projet Supabase et exécuter dans l'ordre les fichiers `supabase/migrations/001_init.sql` à `014_caisse_obligatoire.sql` (SQL Editor ou API).
+1. Créer un projet Supabase et exécuter dans l'ordre les fichiers `supabase/migrations/001_init.sql` à `015_demo.sql` (SQL Editor ou API).
    Puis déployer la fonction serveur `supabase/functions/pin` (connexion par code PIN sur le poste), sans vérification JWT : `supabase functions deploy pin --no-verify-jwt`.
 2. Renseigner `app/config.js` avec l'URL du projet et la clé « anon public ».
 3. Dans Supabase → Authentication → URL Configuration, mettre l'adresse du site (`…/Wergui-SN/app/`) comme Site URL et URL de redirection.

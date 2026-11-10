@@ -94,6 +94,7 @@ const API = {
   transferer: (p, user) => rpc("transferer_titulaire", { p, p_user: user }),
   suisAdmin: () => rpc("suis_admin", {}),
   adminPharmacies: () => rpc("admin_pharmacies", {}),
+  rafraichirDemo: p => rpc("admin_rafraichir_demo", { p }),
   adminDefinir: (p, formule, statut, paye) => rpc("admin_definir_abonnement", { p, p_formule: formule, p_statut: statut, p_paye_jusqu: paye || null }),
   toutesVentes: async pid => { const v = await all("ventes", b => b.eq("pharmacy_id", pid).order("created_at", { ascending: false })), l = await all("vente_lignes", b => b.eq("pharmacy_id", pid)); return { v, l }; },
   creerPharmacie: (nom, ville, tel, titulaire) => rpc("creer_pharmacie", { p_nom: nom, p_ville: ville, p_telephone: tel, p_nom_titulaire: titulaire }),
@@ -890,7 +891,7 @@ V.abonnement = () => { const p = D.ph, r = essaiReste(), cur = FORMULES.find(f =
 /* ================================================================ console Wergui SN (administrateurs) */
 V.console = () => { if (!S.adminList) { Promise.all([API.adminPharmacies(), API.adminPaiements(), API.config()]).then(([r, pays, cfg]) => { S.adminList = r; S.adminPays = pays; S.adminCfg = cfg || {}; S.adminPend = pays.filter(x => x.statut === "en_attente").length; if (S.view === "console") render(true); }).catch(e => toast(errMsg(e), true)); return head("Console Wergui SN", "Chargement…"); }
   const PA = S.adminPays.filter(x => x.statut === "en_attente"), nomPh = id => (S.adminList.find(x => x.id === id) || { nom: "Pharmacie supprimée" }).nom, C = S.adminCfg;
-  const L = S.adminList, actifs = L.filter(x => x.statut === "actif"), mrr = actifs.reduce((s, x) => s + (x.formule === "officine" ? 25000 : 15000), 0);
+  const TOUT = S.adminList, L = TOUT.filter(x => !x.demo), actifs = L.filter(x => x.statut === "actif"), mrr = actifs.reduce((s, x) => s + (x.formule === "officine" ? 25000 : 15000), 0);
   return head("Console Wergui SN", "Réservée aux administrateurs. Abonnements des pharmacies : aucune donnée de stock ni de vente n'est visible ici.", `<button class="btn" data-act="consolerefresh">Actualiser</button>`) +
   `<div class="kpis"><div class="kpi"><span>Pharmacies</span><b class="num">${L.length}</b><em>${L.filter(x => x.statut === "essai").length} en essai</em></div><div class="kpi"><span>Abonnées</span><b class="num">${actifs.length}</b><em>${actifs.filter(x => x.formule === "officine").length} Officine</em></div><div class="kpi"><span>Revenu mensuel</span><b class="num">${fmt(mrr)}</b><em>abonnements actifs</em></div><div class="kpi"><span>Paiements à valider</span><b class="num">${PA.length}</b><em>${PA.length ? fmt(PA.reduce((s, x) => s + x.montant, 0)) : "aucun"}</em></div></div>
   <section class="panel"><header><div><h2>Paiements à valider</h2><p>Vérifiez dans votre application Wave ou Orange Money que l'argent est bien arrivé avant de valider : l'abonnement est alors prolongé automatiquement.</p></div></header>
@@ -907,10 +908,10 @@ V.console = () => { if (!S.adminList) { Promise.all([API.adminPharmacies(), API.
   <div class="field full"><label for="cfgben">Nom du bénéficiaire Wave</label><input id="cfgben" value="${esc(C.beneficiaire || "")}" placeholder="ex. Wergui SN"></div></div>
   <div class="row"><button class="btn pri" data-act="cfgsave">Enregistrer les numéros</button></div></section>
   <section class="panel"><div class="tw"><table><thead><tr><th>Pharmacie</th><th>Titulaire</th><th>Activité</th><th>Formule</th><th>Statut</th><th>Payé jusqu'au</th><th></th></tr></thead><tbody>
-  ${L.map(x => `<tr><td><b>${esc(x.nom)}</b><small>${esc(x.ville || "")} ${esc(x.telephone || "")} · inscrite le ${dfr(x.created_at)}${x.statut === "essai" ? " · essai jusqu'au " + dfr(x.essai_fin) : ""}</small></td><td>${esc(x.titulaire || "—")}</td><td><small style="color:var(--fg)">${x.membres} membres · ${x.produits} produits · ${x.ventes_30j} ventes/30 j</small></td>
+  ${TOUT.map(x => `<tr><td><b>${esc(x.nom)}</b>${x.demo ? ' <span class="st acc">Démo</span>' : ""}<small>${esc(x.ville || "")} ${esc(x.telephone || "")} · inscrite le ${dfr(x.created_at)}${x.statut === "essai" ? " · essai jusqu'au " + dfr(x.essai_fin) : ""}</small></td><td>${esc(x.titulaire || "—")}</td><td><small style="color:var(--fg)">${x.membres} membres · ${x.produits} produits · ${x.ventes_30j} ventes/30 j</small></td>
   <td><select id="af-${x.id}">${["petite","officine"].map(f => `<option value="${f}" ${x.formule === f ? "selected" : ""}>${f === "officine" ? "Officine" : "Petite officine"}</option>`).join("")}</select></td>
   <td><select id="as-${x.id}">${["essai","actif","suspendu"].map(f => `<option ${x.statut === f ? "selected" : ""}>${f}</option>`).join("")}</select></td>
-  <td><input type="date" id="ap-${x.id}" value="${x.paye_jusqu || ""}"></td><td><button class="btn sm pri" data-admsave="${x.id}">Enregistrer</button></td></tr>`).join("") || '<tr><td colspan="7" class="empty">Aucune pharmacie inscrite.</td></tr>'}</tbody></table></div></section>`; };
+  <td><input type="date" id="ap-${x.id}" value="${x.paye_jusqu || ""}"></td><td><div class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm pri" data-admsave="${x.id}">Enregistrer</button>${x.demo ? `<button class="btn sm" data-demofresh="${x.id}">Remettre à la date du jour</button>` : ""}</div></td></tr>`).join("") || '<tr><td colspan="7" class="empty">Aucune pharmacie inscrite.</td></tr>'}</tbody></table></div></section>`; };
 
 /* ================================================================ scanner (DataMatrix, QR, code-barres) */
 const LIB = "https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/iife/ponyfill.js", WASM = "https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/reader/", FORMATS = ["data_matrix","qr_code","ean_13","ean_8","code_128"];
@@ -1147,6 +1148,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.invdel) { if (!confirmerTexte("Annuler cette invitation ?")) return; return run(t, async () => { await API.annulerInvitation(d.invdel); S.invs = null; render(true); toast("Invitation annulée : le lien ne fonctionne plus."); }); }
   if (d.posterm) { if (!confirmerTexte("Retirer ce poste ? L'appareil n'affichera plus la liste de l'équipe.")) return; return run(t, async () => { await API.supprimerPoste(d.posterm); const po = POSTE.get(); S.postes = null; render(true); toast("Poste retiré."); }); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
+  if (d.demofresh) return run(t, async () => { const r = await API.rafraichirDemo(d.demofresh); S.adminList = null; if (d.demofresh === S.pid) await reload(true); else render(true); toast(r.heures > 0 ? `Démo remise à la date du jour (dates avancées de ${r.jours ? pl(r.jours, "jour") : pl(r.heures, "heure")})${r.caisse_ouverte ? ", caisse du jour rouverte" : ""}.` : "La démo est déjà à jour."); });
   if (d.reticket) { const v = D.ventes.find(x => x.id === d.reticket); if (v) fenetreTicket(ticketVente(v, D.lignes.filter(l => l.vente_id === v.id))); return; }
   if (d.impr) { const [k, v] = d.impr.split("|"); setImpr({ [k]: k === "largeur" ? +v : v }); return reglagesImprimante(); }
   if (d.fileretry || d.filedel) { const id = d.fileretry || d.filedel; if (d.filedel && !confirmerTexte("Supprimer définitivement cette vente de la file ?")) return;
