@@ -44,6 +44,7 @@ const API = {
   annulerInvitation: id => rpc("annuler_invitation", { p_id: id }),
   voirInvitation: code => rpc("voir_invitation", { p_code: code }),
   accepterInvitation: (code, nom) => rpc("accepter_invitation", { p_code: code, p_nom: nom }),
+  importer: (p, lignes, maj) => rpc("importer_produits", { p, p_lignes: lignes, p_maj_prix: maj }),
   config: () => q(sb.from("wergui_config").select("*").eq("id", 1).maybeSingle()),
   paiements: p => q(sb.from("paiements").select("*").eq("pharmacy_id", p).order("declare_le", { ascending: false }).limit(24)),
   declarerPaiement: (p, f, m, moyen, ref) => rpc("declarer_paiement", { p, p_formule: f, p_mois: m, p_moyen: moyen, p_reference: ref || null }),
@@ -361,6 +362,113 @@ async function accepterInvitationEnAttente() { const meta = (S.user && S.user.us
   try { const pid = await API.accepterInvitation(code, meta.nom || ""); store.set("wergui.invitation", ""); store.set("wergui.inv.fait." + code, "1"); return pid; }
   catch (e) { if (estReseau(e)) throw e; store.set("wergui.invitation", ""); store.set("wergui.inv.fait." + code, "1"); S._invErr = errMsg(e); return null; } }
 
+/* ================================================================ import Excel / CSV */
+// Le fichier est lu sur l'appareil (aucun envoi du fichier lui-même) ; seules les lignes reconnues partent vers la base,
+// qui vérifie et enregistre tout d'un bloc (importer_produits).
+const CHAMPS = [
+  ["nom", "Nom du produit", ["nom", "produit", "designation", "libelle", "article", "medicament", "denomination", "nom du produit", "nom commercial"]],
+  ["presentation", "Présentation", ["presentation", "forme", "conditionnement", "dosage", "format"]],
+  ["code", "Code (CIP ou code-barres)", ["code", "cip", "cip13", "ean", "ean13", "code barre", "code barres", "codebarre", "gtin", "code cip"]],
+  ["prix_vente", "Prix de vente", ["prix de vente", "prix vente", "pv", "ppv", "prix public", "prix", "pu", "prix unitaire", "prix de vente ttc"]],
+  ["prix_achat", "Prix d'achat", ["prix d achat", "prix achat", "pa", "prix grossiste", "prix cession", "cout", "cout d achat", "prix de revient"]],
+  ["quantite", "Quantité en stock", ["quantite", "qte", "qty", "stock", "quantite en stock", "nombre", "nb"]],
+  ["lot", "N° de lot", ["lot", "n lot", "no lot", "numero de lot", "num lot", "n de lot"]],
+  ["peremption", "Date de péremption", ["peremption", "date de peremption", "date peremption", "expiration", "date d expiration", "dlu", "date exp", "exp", "dlc"]],
+  ["rayon", "Rayon", ["rayon", "famille", "categorie", "classe", "groupe"]],
+  ["fournisseur", "Grossiste", ["grossiste", "fournisseur", "laboratoire"]],
+  ["seuil", "Seuil d'alerte", ["seuil", "stock mini", "stock minimum", "minimum", "seuil d alerte"]]];
+const normTxt = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[°º]/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+function lireCSV(txt) { txt = txt.replace(/^﻿/, ""); const l1 = txt.split(/\r?\n/, 1)[0], sep = [";", "\t", ","].map(c => [c, l1.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < txt.length; i++) { const c = txt[i];
+    if (q) { if (c === '"') { if (txt[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; continue; }
+    if (c === '"') q = true; else if (c === sep) { row.push(cur); cur = ""; } else if (c === "\n" || c === "\r") { if (c === "\r" && txt[i + 1] === "\n") i++; row.push(cur); rows.push(row); row = []; cur = ""; } else cur += c; }
+  if (cur || row.length) { row.push(cur); rows.push(row); } return rows; }
+async function dezipper(buf) { const dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder(); let fin = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { fin = i; break; }
+  if (fin < 0) throw new Error("Fichier Excel illisible."); const n = dv.getUint16(fin + 10, true); let off = dv.getUint32(fin + 16, true); const F = {};
+  for (let k = 0; k < n && dv.getUint32(off, true) === 0x02014b50; k++) { const nl = dv.getUint16(off + 28, true); F[dec.decode(u8.subarray(off + 46, off + 46 + nl))] = { m: dv.getUint16(off + 10, true), t: dv.getUint32(off + 20, true), o: dv.getUint32(off + 42, true) }; off += 46 + nl + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true); }
+  return async nom => { const f = F[nom]; if (!f) return null; const s = f.o + 30 + dv.getUint16(f.o + 26, true) + dv.getUint16(f.o + 28, true), d = u8.subarray(s, s + f.t);
+    if (f.m === 0) return dec.decode(d); if (typeof DecompressionStream === "undefined") throw new Error("Navigateur trop ancien pour lire l'Excel : enregistrez le fichier en CSV.");
+    return new Response(new Blob([d]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text(); }; }
+async function lireXLSX(buf) { const lire = await dezipper(buf), P = new DOMParser(), xml = s => P.parseFromString(s, "application/xml");
+  const wb = xml(await lire("xl/workbook.xml") || ""), feuille = wb.getElementsByTagName("sheet")[0]; if (!feuille) throw new Error("Aucune feuille dans le fichier Excel.");
+  const rid = feuille.getAttribute("r:id") || feuille.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+  const rels = xml(await lire("xl/_rels/workbook.xml.rels") || ""); let cible = "worksheets/sheet1.xml";
+  [...rels.getElementsByTagName("Relationship")].forEach(r => { if (r.getAttribute("Id") === rid) cible = r.getAttribute("Target"); });
+  cible = cible.replace(/^\/?xl\//, "").replace(/^\//, ""); const ss = await lire("xl/sharedStrings.xml");
+  const parts = ss ? [...xml(ss).getElementsByTagName("si")].map(si => [...si.getElementsByTagName("t")].map(t => t.textContent).join("")) : [];
+  const sh = xml(await lire("xl/" + cible) || ""), rows = [];
+  [...sh.getElementsByTagName("row")].forEach(r => { const row = []; [...r.getElementsByTagName("c")].forEach(c => { const ref = c.getAttribute("r") || "", lettres = (ref.match(/^[A-Z]+/) || [""])[0];
+      let col = 0; for (const ch of lettres) col = col * 26 + ch.charCodeAt(0) - 64; col = lettres ? col - 1 : row.length;
+      const t = c.getAttribute("t"), v = c.getElementsByTagName("v")[0], is = c.getElementsByTagName("is")[0];
+      row[col] = t === "s" ? (parts[+(v && v.textContent)] ?? "") : t === "inlineStr" ? (is ? [...is.getElementsByTagName("t")].map(x => x.textContent).join("") : "") : t === "str" || t === "e" ? (v ? v.textContent : "") : v ? (isNaN(+v.textContent) ? v.textContent : +v.textContent) : ""; });
+    rows.push([...row].map(x => x ?? "")); });
+  return rows; }
+async function lireFichier(file) { if (file.size > 15e6) throw new Error("Fichier trop gros (15 Mo maximum).");
+  const buf = await file.arrayBuffer(), u8 = new Uint8Array(buf);
+  if (u8[0] === 0x50 && u8[1] === 0x4b) return lireXLSX(buf);
+  if (u8[0] === 0xd0 && u8[1] === 0xcf) throw new Error("Ancien format Excel (.xls) : ouvrez-le dans Excel et enregistrez-le en .xlsx ou en CSV.");
+  let txt; try { txt = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e) { txt = new TextDecoder("windows-1252").decode(buf); }
+  return lireCSV(txt); }
+function nombre(v) { if (typeof v === "number") return Math.round(v); let s = String(v ?? "").replace(/[\s  ]/g, "").replace(/f?cfa|fcfa|xof|f$/i, "");
+  if (!s) return null; if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ""); s = s.replace(",", "."); const n = Number(s); return isFinite(n) ? Math.round(n) : NaN; }
+function dateLue(v) { const fm = d => isNaN(d) ? null : d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+  const finMois = (y, m) => fm(new Date(Date.UTC(y, m, 0)));
+  if (typeof v === "number") return v > 20000 && v < 80000 ? fm(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5)) : NaN;
+  const s = String(v ?? "").trim(); if (!s) return null; let m;
+  const an = y => (y = +y) < 100 ? 2000 + y : y;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(s))) return fm(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])));
+  if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/.exec(s))) return +m[2] > 12 ? NaN : fm(new Date(Date.UTC(an(m[3]), +m[2] - 1, +m[1])));
+  if ((m = /^(\d{1,2})[-/.](\d{2,4})$/.exec(s))) return +m[1] > 12 ? NaN : finMois(an(m[2]), +m[1]);
+  if ((m = /^(\d{4})[-/.](\d{1,2})$/.exec(s))) return finMois(+m[1], +m[2]);
+  return NaN; }
+function preparerImport(rows) { rows = rows.filter(r => r.some(c => String(c).trim() !== ""));
+  if (rows.length < 2) throw new Error("Le fichier ne contient pas de lignes de produits.");
+  let best = 0, bestScore = -1; rows.slice(0, 10).forEach((r, i) => { const sc = r.filter(c => CHAMPS.some(([, , syn]) => syn.includes(normTxt(c)))).length; if (sc > bestScore) { bestScore = sc; best = i; } });
+  const entetes = rows[best].map((c, i) => String(c).trim() || "Colonne " + (i + 1)), map = {}, prises = new Set();
+  [true, false].forEach(exact => CHAMPS.forEach(([k, , syn]) => { if (map[k] != null) return; const i = entetes.findIndex((h, j) => !prises.has(j) && (exact ? syn.includes(normTxt(h)) : syn.some(s => s.length > 3 && normTxt(h).startsWith(s)))); if (i >= 0) { map[k] = i; prises.add(i); } }));
+  return { entetes, data: rows.slice(best + 1), debut: best + 2, map, maj: true }; }
+function lignesImport() { const I = S.imp, auj = iso(today()); return I.data.map((r, i) => { const g = k => I.map[k] == null ? "" : r[I.map[k]], o = { ligne: I.debut + i }, err = [], avert = [];
+    o.nom = String(g("nom")).trim(); o.presentation = String(g("presentation")).trim(); o.code = String(g("code")).replace(/\s/g, "").replace(/\.0+$/, ""); o.lot = String(g("lot")).trim(); o.rayon = String(g("rayon")).trim(); o.fournisseur = String(g("fournisseur")).trim();
+    ["prix_vente", "prix_achat", "quantite", "seuil"].forEach(k => { const n = nombre(g(k)); if (Number.isNaN(n) || (n != null && n < 0)) err.push(`${CHAMPS.find(c => c[0] === k)[1]} illisible`); else o[k] = n; });
+    const d = dateLue(g("peremption")); if (Number.isNaN(d)) err.push("date de péremption illisible"); else o.peremption = d;
+    if (!o.nom) err.push("nom manquant");
+    if (o.code && !/^[0-9A-Za-z]{4,20}$/.test(o.code)) err.push("code invalide");
+    if (o.quantite > 0 && !o.peremption && !err.some(e => /date/.test(e))) err.push("date de péremption manquante pour le stock");
+    if (o.quantite > 0 && o.peremption && o.peremption < auj) avert.push("lot déjà périmé : non importé");
+    if (o.prix_vente == null && o.nom) avert.push("sans prix de vente");
+    Object.keys(o).forEach(k => { if (o[k] === "" || o[k] == null) delete o[k]; }); o.ligne = I.debut + i;
+    return { o, err, avert }; }); }
+function ecranImport(msg) { const I = S.imp;
+  if (!I) return layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="Importer"><div class="top"><div><h2>Importer depuis Excel</h2><p>Ajoutez d'un coup votre catalogue et votre stock : produits, prix, codes, lots et dates de péremption.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+    ${msg ? `<p class="err">${esc(msg)}</p>` : ""}
+    <ol class="paysteps"><li>Préparez un fichier Excel (.xlsx) ou CSV avec une ligne par produit, ou par lot. Seul le <b>nom du produit</b> est obligatoire.</li>
+      <li>Colonnes reconnues : nom, présentation, code CIP, prix de vente, prix d'achat, quantité, n° de lot, date de péremption, rayon, grossiste, seuil. Les noms de colonnes n'ont pas besoin d'être exacts : vous vérifierez à l'étape suivante.</li>
+      <li>Les produits déjà enregistrés sont retrouvés par leur code, sinon par leur nom et leur présentation : rien n'est créé en double. <b>Les quantités, elles, s'ajoutent au stock</b> : n'importez pas deux fois le même stock.</li></ol>
+    <div class="row"><label class="btn pri" style="cursor:pointer">Choisir le fichier<input type="file" id="impfile" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden></label><button class="btn" data-act="impmodele">Télécharger le modèle</button></div>
+    <p class="muted" style="font-size:.85rem">Astuce : le fichier « Exporter en Excel » des paramètres se réimporte tel quel.</p></div>`);
+  const L = lignesImport(), ok = L.filter(x => !x.err.length), ko = L.filter(x => x.err.length), stock = ok.filter(x => x.o.quantite > 0 && !x.avert.some(a => /périmé/.test(a)));
+  const col = k => `<select data-impmap="${k}"><option value="">— aucune —</option>${I.entetes.map((h, i) => `<option value="${i}" ${I.map[k] === i ? "selected" : ""}>${esc(h)}</option>`).join("")}</select>`;
+  const st = x => x.err.length ? `<span class="st bad">${esc(x.err.join(", "))}</span>` : x.avert.length ? `<span class="st warn">${esc(x.avert.join(", "))}</span>` : '<span class="st ok">OK</span>';
+  layer(`<div class="drawer" role="dialog" aria-modal="true" aria-label="Importer"><div class="top"><div><h2>Vérifier l'import</h2><p>${esc(I.fichier)} · ${pl(L.length, "ligne")}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+    <section class="panel"><header><h3>Colonnes</h3><p>Vérifiez que chaque information vient de la bonne colonne de votre fichier.</p></header>
+      <div class="form">${CHAMPS.map(([k, l]) => `<div class="field"><label>${l}${k === "nom" ? " *" : ""}</label>${col(k)}</div>`).join("")}</div>
+      <label class="row" style="gap:8px;flex-wrap:nowrap"><input type="checkbox" id="impmaj" ${I.maj ? "checked" : ""} style="width:20px;height:20px;flex:none"> <span>Mettre à jour les prix des produits déjà enregistrés</span></label></section>
+    <div class="kpis"><div class="kpi"><span>Lignes prêtes</span><b class="num">${ok.length}</b><em>${pl(stock.length, "lot")} en stock · ${nb(stock.reduce((s, x) => s + x.o.quantite, 0))} boîtes</em></div><div class="kpi"><span>À corriger</span><b class="num">${ko.length}</b><em>${ko.length ? "ignorées à l'import" : "aucune"}</em></div></div>
+    <section class="panel"><header><h3>Aperçu</h3></header><div class="tw"><table><thead><tr><th>Ligne</th><th>Produit</th><th class="r">Prix</th><th class="r">Qté</th><th>Lot · péremption</th><th>État</th></tr></thead><tbody>
+      ${[...ko.slice(0, 15), ...ok.slice(0, Math.max(5, 15 - ko.length))].sort((a, b) => a.o.ligne - b.o.ligne).map(x => `<tr><td class="num">${x.o.ligne}</td><td><b>${esc(x.o.nom || "—")}</b><small>${esc(x.o.presentation || "")}${x.o.code ? " · " + esc(x.o.code) : ""}</small></td><td class="r num">${x.o.prix_vente != null ? fmt(x.o.prix_vente) : "—"}</td><td class="r num">${x.o.quantite ?? ""}</td><td>${esc(x.o.lot || "")}${x.o.peremption ? " · " + dfr(x.o.peremption) : ""}</td><td>${st(x)}</td></tr>`).join("")}</tbody></table></div>
+      ${L.length > 15 ? `<p class="muted" style="font-size:.85rem">Aperçu des premières lignes${ko.length ? ", lignes à corriger en premier" : ""}.</p>` : ""}</section>
+    <div class="row"><button class="btn pri" data-act="impgo" ${ok.length ? "" : "disabled"}>Importer ${pl(ok.length, "ligne")}${ko.length ? ` (${ko.length} ignorée${ko.length > 1 ? "s" : ""})` : ""}</button><button class="btn" data-act="impautre">Choisir un autre fichier</button></div></div>`); }
+async function lancerImport(btn) { const lignes = lignesImport().filter(x => !x.err.length).map(x => x.o), tot = {};
+  await run(btn, async () => { for (let i = 0; i < lignes.length; i += 1000) { const r = await API.importer(S.pid, lignes.slice(i, i + 1000), S.imp.maj); Object.entries(r).forEach(([k, v]) => tot[k] = (tot[k] || 0) + v); }
+    S.imp = null; closeLayer(); await reload(true);
+    toast(`Import terminé : ${pl(tot.crees || 0, "produit créé", "produits créés")}, ${pl(tot.mis_a_jour || 0, "mis à jour", "mis à jour")}${tot.lots ? `, ${pl(tot.lots, "lot")} (${nb(tot.boites)} boîtes) en stock` : ""}${tot.perimes_ignores ? `. ${pl(tot.perimes_ignores, "lot périmé ignoré", "lots périmés ignorés")}` : ""}.`); }); }
+const modeleImport = () => csv([["Produit", "Présentation", "Code (CIP)", "Rayon", "Grossiste", "Prix de vente", "Prix d'achat", "Quantité", "Lot", "Péremption"],
+  ["Doliprane 1000 mg", "boîte de 8 comprimés", "3400935955838", "Antalgiques", "Laborex", 1250, 950, 40, "4LW8A", "31/12/2027"],
+  ["Coartem 20/120 mg", "boîte de 24 comprimés", "", "Antipaludiques", "Cophase", 3900, 2900, 25, "KA1203", "06/2027"],
+  ["Smecta", "boîte de 30 sachets", "", "Digestif", "Laborex", 3800, 2800, "", "", ""]]);
+
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
   stopCam();
@@ -529,7 +637,7 @@ async function encaisser(btn) { await run(btn, async () => {
 function printTicket(items, tot, mode) { $("#print").innerHTML = `<h3>${esc(D.ph.nom)}</h3><div>${esc(D.ph.adresse || "")} ${esc(D.ph.telephone || "")}</div><div>${new Date().toLocaleString("fr-FR")}</div><hr>${items.map(i => `<div class="l"><span>${i.q} × ${esc(i.p.nom)}</span><span>${fmt(i.q * i.p.prix_vente)}</span></div>`).join("")}<hr><div class="l"><b>Total</b><b>${fmt(tot)}</b></div><div>Paiement : ${esc(mode)}</div><div>Vendeur : ${esc(me().nom)}</div><p>${esc(D.ph.message_ticket || "")}</p>`; }
 
 /* ================================================================ stock et produits */
-V.stock = () => head("Stock", `${pl(D.produits.length, "référence")}. Touchez un produit pour voir ses lots.`, can("prod") ? `<button class="btn pri" data-act="newprod">Nouveau produit</button>` : "") +
+V.stock = () => head("Stock", `${pl(D.produits.length, "référence")}. Touchez un produit pour voir ses lots.`, can("prod") ? `<button class="btn" data-act="import">Importer (Excel)</button><button class="btn pri" data-act="newprod">Nouveau produit</button>` : "") +
   `<section class="panel"><div class="row"><input type="search" id="sq" placeholder="Rechercher" value="${esc(S.q)}" style="flex:1;min-width:180px" aria-label="Rechercher dans le stock">
   <select id="scat" aria-label="Rayon"><option value="">Tous les rayons</option>${D.rayons.map(r => `<option value="${r.id}" ${S.fcat === r.id ? "selected" : ""}>${esc(r.nom)}</option>`).join("")}</select>
   <select id="sst" aria-label="État"><option value="">Tous les états</option>${[["bad","Rupture"],["warn","Sous le seuil"],["exp","Lot à périmer bientôt"]].map(([v, l]) => `<option value="${v}" ${S.fst === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -988,6 +1096,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "compte") return compte();
   if (a === "verrou") return verrouiller();
   if (a === "inviter") return inviter();
+  if (a === "import") { S.imp = null; return ecranImport(); }
+  if (a === "impautre") { S.imp = null; return ecranImport(); }
+  if (a === "impmodele") { telecharger("wergui-modele-import.csv", modeleImport(), "text/csv;charset=utf-8"); return toast("Modèle téléchargé : ouvrez-le dans Excel, remplissez-le, puis importez-le."); }
+  if (a === "impgo") return lancerImport(t);
   if (a === "invcreer") { const role = (document.querySelector("[data-ivrole][aria-pressed=true]") || {}).dataset?.ivrole || "vendeur", nom = $("#ivnom").value.trim();
     return run(t, async () => { const code = await API.creerInvitation(S.pid, nom, role, permOf(role)); S.invs = null; partagerInvitation(code, nom, role); render(true); }); }
   if (a === "invcopier") { try { await navigator.clipboard.writeText(S._invMsg); toast("Message copié : collez-le dans WhatsApp ou par SMS."); } catch (e) { const i = $("#ivlien"); i && i.select(); toast("Copie impossible : sélectionnez le lien.", true); } return; }
@@ -1058,6 +1170,9 @@ document.addEventListener("change", async e => { const t = e.target; if (!D) ret
   if (t.id === "sst") { S.fst = t.value; return fillStock(); }
   if (t.id === "icat") { S.invCat = t.value; return render(true); }
   if (t.id === "org") { S.org = t.value; return; }
+  if (t.id === "impfile" && t.files[0]) { const f = t.files[0]; t.value = ""; try { S.imp = preparerImport(await lireFichier(f)); S.imp.fichier = f.name; ecranImport(); } catch (e) { S.imp = null; ecranImport(e.message || "Fichier illisible."); } return; }
+  if (t.dataset.impmap) { const v = t.value; S.imp.map[t.dataset.impmap] = v === "" ? null : +v; return ecranImport(); }
+  if (t.id === "impmaj") { S.imp.maj = t.checked; return; }
   if (t.id === "scanfile" && t.files[0]) { scanPhoto(t.files[0]); t.value = ""; return; }
   if (t.id === "sp" && S.cur) { S.cur.pid = t.value || null; S.cur.lot = ($("#slot") || {}).value ?? S.cur.lot; S.cur.exp = ($("#sexp") || {}).value ?? S.cur.exp; return V_scanRes(); }
   if (t.dataset.ray) { const v = t.value.trim(); if (!v) return render(true); return run(null, async () => { await API.update("rayons", t.dataset.ray, { nom: v }); await reload(true); toast(`Rayon renommé : « ${v} ».`); }); }

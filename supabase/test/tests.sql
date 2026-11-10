@@ -301,6 +301,33 @@ reset role;
 delete from membres where user_id='00000000-0000-0000-0000-00000000000f';
 
 
+-- Import Excel / CSV
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.importer_produits(%L,''[{"ligne":2,"nom":"X"}]'',true)',:'p'),'import réservé au droit « Produits et prix »');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
+select public.importer_produits(:'p', jsonb_build_array(
+  jsonb_build_object('ligne',2,'nom','Coartem 20/120 mg','presentation','boîte de 24','prix_vente',3900,'prix_achat',2900,'rayon','Antipaludiques','fournisseur','Laborex','quantite',20,'lot','ka12','peremption',(current_date+300)::text),
+  jsonb_build_object('ligne',3,'nom','Coartem 20/120 mg','presentation','boîte de 24','quantite',5,'lot','KA12','peremption',(current_date+300)::text),
+  jsonb_build_object('ligne',4,'nom','Produit nouveau','prix_vente',1000,'rayon','Nouveau rayon','fournisseur','Grossiste X','code','3400935955838'),
+  jsonb_build_object('ligne',5,'nom','Paracétamol 500 mg','presentation','boîte de 16','prix_vente',650,'code','03400934507786'),
+  jsonb_build_object('ligne',6,'nom','Vieux lot','quantite',3,'peremption',(current_date-10)::text)
+), true) as imp \gset
+select pg_temp.ok((:'imp'::jsonb->>'crees')::int=3 and (:'imp'::jsonb->>'mis_a_jour')::int=2,'produits créés et retrouvés (par nom et par code)');
+select pg_temp.ok((select sum(quantite) from lots l join produits pr on pr.id=l.produit_id where pr.nom='Coartem 20/120 mg' and pr.pharmacy_id=:'p')=25,'même lot sur deux lignes : quantités additionnées');
+select pg_temp.ok((select prix_vente from produits where id=:'prod')=650,'prix mis à jour pour un produit existant (retrouvé par son code)');
+select pg_temp.ok((select codes from produits where nom='Produit nouveau' and pharmacy_id=:'p')='{03400935955838}','CIP à 13 chiffres converti en code de boîte');
+select pg_temp.ok((select count(*) from rayons where pharmacy_id=:'p' and nom='Nouveau rayon')=1 and (select count(*) from fournisseurs where pharmacy_id=:'p' and nom='Grossiste X')=1,'rayon et grossiste créés au besoin');
+select pg_temp.ok((:'imp'::jsonb->>'perimes_ignores')::int=1,'lot déjà périmé : ignoré et signalé');
+select public.importer_produits(:'p', '[{"ligne":2,"nom":"Paracétamol 500 mg","presentation":"boîte de 16","prix_vente":9999}]'::jsonb, false);
+select pg_temp.ok((select prix_vente from produits where id=:'prod')=650,'option : ne pas toucher aux prix existants');
+select pg_temp.echoue(format('select public.importer_produits(%L,''[{"ligne":2,"nom":"Bon"},{"ligne":3,"nom":"Sans date","quantite":4}]'',true)',:'p'),'stock sans date de péremption refusé');
+select pg_temp.ok((select count(*) from produits where nom='Bon' and pharmacy_id=:'p')=0,'en cas d''erreur, rien n''est importé');
+select pg_temp.echoue(format('select public.importer_produits(%L,''[{"ligne":2,"nom":"X","code":"12;DROP"}]'',true)',:'p'),'code invalide refusé');
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
+select pg_temp.echoue(format('select public.importer_produits(%L,''[{"ligne":2,"nom":"Pirate"}]'',true)',:'p'),'import dans la pharmacie d''un autre refusé');
+reset role;
+
+
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue('select public.supprimer_mon_compte(false)','titulaire seul : suppression du compte refusée sans décision sur la pharmacie');
