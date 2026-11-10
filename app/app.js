@@ -469,6 +469,59 @@ const modeleImport = () => xlsx([["Produit", "Présentation", "Code (CIP)", "Ray
   ["Coartem 20/120 mg", "boîte de 24 comprimés", "", "Antipaludiques", "Cophase", 3900, 2900, 25, "KA1203", "06/2027"],
   ["Smecta", "boîte de 30 sachets", "", "Digestif", "Laborex", 3800, 2800, "", "", ""]], "Produits");
 
+/* ================================================================ ticket de caisse */
+// Réglages de l'imprimante propres à chaque appareil (gardés sur l'appareil) : largeur du papier, quand imprimer, comment.
+const IMPR = () => Object.assign({ quand: "demander", largeur: 58, methode: "navigateur" }, (() => { try { return JSON.parse(store.get("wergui.imprimante") || "{}"); } catch (e) { return {}; } })());
+const setImpr = patch => store.set("wergui.imprimante", JSON.stringify(Object.assign(IMPR(), patch)));
+const sansAccents = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[’‘]/g, "'").replace(/[«»“”]/g, '"').replace(/[×]/g, "x").replace(/[^\x20-\x7e\n]/g, "");
+function ticketVente(v, lignes) { // à partir d'une vente enregistrée (tickets du jour, réimpression)
+  const items = []; lignes.forEach(l => { const p = byId(l.produit_id), nom = p ? p.nom : "Produit supprimé", it = items.find(x => x.pid === l.produit_id);
+    if (it) it.q += l.quantite; else items.push({ pid: l.produit_id, nom, pu: l.prix_unitaire, q: l.quantite }); });
+  return { num: String(v.client_id || v.id).slice(0, 8).toUpperCase(), quand: v.created_at, vendeur: nomMembre(v.user_id), items, remise: v.remise_pct || 0, total: v.total, mode: v.mode, org: v.organisme, part: v.part_assurance || 0, hl: !!v.hors_ligne || !!v._local }; }
+function ticketTexte(t, cols) { const out = [], ph = D.ph, c = R(), sep = "-".repeat(cols);
+  const centre = s => { s = s.slice(0, cols); const g = Math.floor((cols - s.length) / 2); return " ".repeat(Math.max(0, g)) + s; };
+  const deux = (a, b) => { a = String(a); b = String(b); const place = cols - b.length - 1; if (a.length > place) { out.push(a.slice(0, cols)); a = ""; } return a + " ".repeat(Math.max(1, cols - a.length - b.length)) + b; };
+  const coupe = s => { const mots = String(s).split(/\s+/), l = []; let cur = ""; mots.forEach(m => { if ((cur + " " + m).trim().length > cols) { if (cur) l.push(cur); cur = m.slice(0, cols); } else cur = (cur + " " + m).trim(); }); if (cur) l.push(cur); return l; };
+  const F = n => Math.round(n || 0).toLocaleString("fr-FR").replace(/[  ]/g, " ") + " F";
+  coupe(ph.nom.toUpperCase()).forEach(l => out.push(centre(l)));
+  [ph.adresse, ph.ville, ph.telephone ? "Tel : " + ph.telephone : ""].filter(Boolean).forEach(x => coupe(x).forEach(l => out.push(centre(l))));
+  if (c.ticket_mentions) coupe(c.ticket_mentions).forEach(l => out.push(centre(l)));
+  out.push(sep); const d = new Date(t.quand);
+  out.push(deux("Ticket " + t.num, d.toLocaleDateString("fr-FR") + " " + hm(t.quand))); out.push("Vendeur : " + t.vendeur); out.push(sep);
+  let brut = 0; t.items.forEach(i => { brut += i.q * i.pu; coupe(i.nom).forEach(l => out.push(l)); out.push(deux("  " + i.q + " x " + F(i.pu), F(i.q * i.pu))); });
+  out.push(sep);
+  if (t.remise) { out.push(deux("Sous-total", F(brut))); out.push(deux("Remise " + t.remise + " %", "-" + F(brut - t.total))); }
+  out.push(deux("TOTAL", F(t.total)));
+  if (t.mode === "Assurance") { out.push(deux("Part " + (t.org || "assurance"), F(t.part))); out.push(deux("A payer par le patient", F(t.total - t.part))); }
+  out.push("Paiement : " + t.mode + (t.org && t.mode !== "Assurance" ? " (" + t.org + ")" : "")); out.push(sep);
+  coupe(ph.message_ticket || "Merci de votre visite.").forEach(l => out.push(centre(l)));
+  if (t.hl) out.push(centre("(vente faite hors ligne)"));
+  return out.join("\n"); }
+function imprimerHTML(html, largeurMm, hauteurMm) { $("#print").innerHTML = html; let st = $("#pagestyle"); if (!st) { st = document.createElement("style"); st.id = "pagestyle"; document.head.appendChild(st); }
+  st.textContent = largeurMm ? `@page{size:${largeurMm}mm ${Math.max(60, Math.round(hauteurMm))}mm;margin:0}#print{width:${largeurMm - 4}mm;padding:2mm}` : "@page{size:auto;margin:12mm}#print{width:auto}";
+  setTimeout(() => window.print(), 60); }
+function ouvrirLien(u) { location.href = u; }
+function imprimerTicket(t) { const I = IMPR(), cols = I.largeur === 80 ? 48 : 32, texte = sansAccents(ticketTexte(t, cols));
+  if (I.methode === "rawbt") { // Android : application RawBT reliée à l'imprimante thermique (Bluetooth, USB ou réseau)
+    const e = new TextEncoder(), parts = [[0x1b, 0x40], [0x1b, 0x74, 0x00], ...e.encode(texte + "\n\n\n\n").reduce((a, b) => { a.push([b]); return a; }, []), [0x1d, 0x56, 0x42, 0x00]].flat();
+    let bin = ""; parts.forEach(b => bin += String.fromCharCode(b)); return ouvrirLien("rawbt:base64," + btoa(bin)); }
+  const lignes = texte.split("\n").length; imprimerHTML(`<pre class="ticket">${esc(texte)}</pre>`, I.largeur, lignes * 4.2 + 14); }
+function whatsappTicket(t, tel) { const n = normPhone(tel), txt = ticketTexte(t, 32); return `https://wa.me/${n}?text=${encodeURIComponent("Votre ticket – " + D.ph.nom + "\n```\n" + txt + "\n```")}`; }
+function fenetreTicket(t, titre) { S._ticket = t; const I = IMPR();
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Ticket"><div class="top"><div><h2>${esc(titre || "Ticket " + t.num)}</h2><p>${fmt(t.total)} · ${esc(t.mode)}${t.org ? " · " + esc(t.org) : ""}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+    <pre class="ticketvue">${esc(ticketTexte(t, I.largeur === 80 ? 48 : 32))}</pre>
+    <div class="row"><button class="btn pri" data-act="tkprint">Imprimer</button><button class="btn" data-act="tkwa">Envoyer par WhatsApp</button><button class="btn" data-close="1">Terminer</button></div>
+    <div class="row" id="tkwabox" hidden><input id="tkwatel" type="tel" inputmode="tel" placeholder="N° du client (ex. 77 123 45 67)" style="flex:1"><a class="btn pri" id="tkwago" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir WhatsApp</a></div>
+    <button class="linkbtn" data-act="tkreglages">Imprimante de cet appareil : ${I.largeur} mm · ${I.methode === "rawbt" ? "application RawBT" : "impression du navigateur"} · ${I.quand === "auto" ? "impression automatique" : I.quand === "jamais" ? "pas de fenêtre après la vente" : "fenêtre après chaque vente"}</button></div>`, true); }
+function reglagesImprimante() { const I = IMPR(), opt = (k, v, l) => `<button data-impr="${k}|${v}" aria-pressed="${String(I[k]) === String(v)}">${l}</button>`;
+  layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Imprimante"><div class="top"><div><h2>Imprimante de cet appareil</h2><p>Ces réglages ne concernent que cet appareil.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
+    <div class="field"><label>Largeur du papier</label><div class="seg" role="group">${opt("largeur", 58, "58 mm (petit rouleau)")}${opt("largeur", 80, "80 mm")}</div></div>
+    <div class="field"><label>Après chaque vente</label><div class="seg" role="group">${opt("quand", "demander", "Montrer le ticket")}${opt("quand", "auto", "Imprimer tout de suite")}${opt("quand", "jamais", "Rien")}</div></div>
+    <div class="field"><label>Comment imprimer</label><div class="seg" role="group">${opt("methode", "navigateur", "Impression du navigateur")}${opt("methode", "rawbt", "Application RawBT (Android)")}</div>
+      <small class="muted">${I.methode === "rawbt" ? "Installez l'application gratuite RawBT (Play Store) et reliez-y votre imprimante thermique Bluetooth, USB ou Wi-Fi : le ticket sort directement, sans fenêtre d'impression." : "Le ticket passe par la fenêtre d'impression de l'appareil (ordinateur avec l'imprimante installée, ou Android avec le service d'impression de l'imprimante)."}</small></div>
+    <div class="row"><button class="btn pri" data-act="tkessai">Imprimer un ticket d'essai</button><button class="btn" data-close="1">Fermer</button></div></div>`, true); }
+const ticketEssai = () => ({ num: "ESSAI", quand: new Date().toISOString(), vendeur: me().nom, items: [{ nom: "Doliprane 1000 mg", pu: 1250, q: 2 }, { nom: "Smecta, boîte de 30 sachets", pu: 3800, q: 1 }], remise: 0, total: 6300, mode: "Espèces", part: 0 });
+
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
   stopCam();
@@ -631,7 +684,7 @@ V.caisse = () => { const top = Object.entries(VJ).sort((a, b) => b[1] - a[1]).sl
    <section class="panel ticket" id="ticket" aria-label="Ticket en cours"><header><h2>Ticket</h2>${S.cart.length ? '<button class="btn sm" data-act="vider">Vider</button>' : ""}</header>${ticket()}</section></div>
   <section class="panel"><header><div><h2>Tickets du jour</h2><p>${pl(vjr.length, "vente")} · ${fmt(vjr.reduce((s, v) => s + v.total, 0))}</p></div></header>
   <div class="tw"><table><thead><tr><th>Heure</th><th>Produits</th><th>Vendeur</th><th>Paiement</th><th class="r">Montant</th></tr></thead><tbody>
-  ${vjr.map(v => `<tr><td class="num">${hm(v.created_at)}</td><td>${D.lignes.filter(l => l.vente_id === v.id).map(l => l.quantite + " × " + esc((byId(l.produit_id) || { nom: "Produit supprimé" }).nom)).join(", ")}${v.remise_pct ? ` <span class="st acc">−${v.remise_pct} %</span>` : ""}</td><td>${esc(nomMembre(v.user_id))}</td><td><span class="st n">${esc(v.mode)}${v.organisme ? " · " + esc(v.organisme) : ""}</span></td><td class="r num">${fmt(v.total)}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">Aucune vente aujourd\'hui.</td></tr>'}</tbody></table></div></section>` +
+  ${vjr.map(v => `<tr><td class="num">${hm(v.created_at)}</td><td>${D.lignes.filter(l => l.vente_id === v.id).map(l => l.quantite + " × " + esc((byId(l.produit_id) || { nom: "Produit supprimé" }).nom)).join(", ")}${v.remise_pct ? ` <span class="st acc">−${v.remise_pct} %</span>` : ""}</td><td>${esc(nomMembre(v.user_id))}</td><td><span class="st n">${esc(v.mode)}${v.organisme ? " · " + esc(v.organisme) : ""}</span></td><td class="r num">${fmt(v.total)} <button class="btn sm" data-reticket="${v.id}" aria-label="Ticket">Ticket</button></td></tr>`).join("") || '<tr><td colspan="5" class="empty">Aucune vente aujourd\'hui.</td></tr>'}</tbody></table></div></section>` +
   (S.cart.length ? `<div class="cartbar"><div><small>${pl(S.cart.reduce((a, c) => a + c.q, 0), "article")}</small><br><b class="num">${fmt(net())}</b></div><button class="btn" data-act="toticket">Voir le ticket · encaisser</button></div>` : ""); };
 function ticket() { if (!S.cart.length) return '<p class="empty">Ajoutez des produits depuis la recherche, ou scannez une boîte.</p>';
   const modes = R().paiements.filter(m => m !== "Assurance" || premium()); if (!modes.includes(S.pay)) S.pay = modes[0];
@@ -656,10 +709,12 @@ async function encaisser(btn) { await run(btn, async () => {
   let hl = S.offline || navigator.onLine === false;
   if (!hl) { try { await API.vendreId(x, false); } catch (e) { if (!estReseau(e)) throw e; hl = true; } }
   if (hl) await venteHorsLigne(x, items);
-  printTicket(items, tot, mode); S.cart = []; S.remise = 0; S.q = "";
-  if (hl) { render(); return toast(`Vente gardée sur cet appareil : ${fmt(tot)} (${mode}). Elle sera envoyée au retour d'internet.`); }
-  await reload(); toast(`Vente enregistrée : ${fmt(tot)} (${mode}).`); }); }
-function printTicket(items, tot, mode) { $("#print").innerHTML = `<h3>${esc(D.ph.nom)}</h3><div>${esc(D.ph.adresse || "")} ${esc(D.ph.telephone || "")}</div><div>${new Date().toLocaleString("fr-FR")}</div><hr>${items.map(i => `<div class="l"><span>${i.q} × ${esc(i.p.nom)}</span><span>${fmt(i.q * i.p.prix_vente)}</span></div>`).join("")}<hr><div class="l"><b>Total</b><b>${fmt(tot)}</b></div><div>Paiement : ${esc(mode)}</div><div>Vendeur : ${esc(me().nom)}</div><p>${esc(D.ph.message_ticket || "")}</p>`; }
+  const tk = { num: x.cid.slice(0, 8).toUpperCase(), quand: x.at, vendeur: me().nom, items: items.map(i => ({ pid: i.p.id, nom: i.p.nom, pu: i.p.prix_vente, q: i.q })), remise: x.remise, total: tot, mode, org, part: tp, hl };
+  S.cart = []; S.remise = 0; S.q = "";
+  if (hl) render(); else await reload();
+  const quand = IMPR().quand;
+  if (quand === "auto") imprimerTicket(tk); else if (quand === "demander") fenetreTicket(tk, hl ? "Vente gardée sur cet appareil" : "Vente enregistrée");
+  toast(hl ? `Vente gardée sur cet appareil : ${fmt(tot)} (${mode}). Elle sera envoyée au retour d'internet.` : `Vente enregistrée : ${fmt(tot)} (${mode}).`); }); }
 
 /* ================================================================ stock et produits */
 V.stock = () => head("Stock", `${pl(D.produits.length, "référence")}. Touchez un produit pour voir ses lots.`, can("prod") ? `<button class="btn" data-act="import">Importer (Excel)</button><button class="btn pri" data-act="newprod">Nouveau produit</button>` : "") +
@@ -785,6 +840,8 @@ SET.grossistes = () => `<section class="panel"><header><div><h2>Les grossistes</
 SET.regles = () => { const c = R(), num = (k, l, h, min, max, unit) => `<div class="set"><div class="grow"><b>${l}</b><small>${h}</small></div><span class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" class="qin" data-cfg="${k}" min="${min}" max="${max}" value="${c[k]}" aria-label="${esc(l)}"><span class="muted">${unit}</span></span></div>`, modes = ["Espèces","Wave","Orange Money","Free Money","Assurance"];
   return `<section class="panel"><header><div><h2>Péremptions et stock</h2></div></header>${num("alerte_jours","Alerter avant la péremption","Les lots entrent dans les alertes ce nombre de jours avant leur date.",15,365,"jours")}${num("reception_mois","Péremption courte à la réception","En dessous, Wergui SN conseille de refuser le lot.",1,24,"mois")}${num("securite_jours","Stock de sécurité","Jours de ventes gardés en plus du délai du grossiste.",0,30,"jours")}${num("couverture_jours","Commandes : couvrir","Jours de ventes couverts par une commande suggérée.",3,60,"jours")}</section>
   <section class="panel"><header><div><h2>Caisse</h2></div></header>${num("tiers_payant","Part prise en charge par l'assurance","Taux par défaut du tiers payant.",0,100,"%")}${num("deconnexion_min","Déconnexion automatique","Après ce nombre de minutes sans activité (0 = jamais). Conseillé sur un téléphone partagé au comptoir.",0,480,"min")}
+  <div class="set"><div class="grow"><b>Mentions du ticket</b><small>Sous le nom de la pharmacie (ex. NINEA, RC, nom du pharmacien). Le message de fin se règle dans « Pharmacie ».</small></div><input type="text" id="tmentions" maxlength="120" value="${esc(c.ticket_mentions || "")}" style="flex:1;min-width:0"></div>
+  <div class="set"><div class="grow"><b>Imprimante de cet appareil</b><small>Largeur du papier, impression automatique, application RawBT.</small></div><button class="btn sm" data-act="tkreglages">Régler</button></div>
   <div class="set"><div class="grow"><b>Organismes</b><small>Séparés par des virgules (IPM, mutuelles, CMU…)</small></div><input type="text" id="orgs" value="${esc(c.organismes.join(", "))}" style="flex:1;min-width:0"></div>
   ${modes.map(m => `<div class="set"><div class="grow"><b>${m}</b><small>${m === "Assurance" ? "Tiers payant" : "Moyen de paiement accepté en caisse"}</small></div>${sw(`data-paym="${m}"`, c.paiements.includes(m), m)}</div>`).join("")}</section>`; };
 async function saveReglages(patch) { const reglages = Object.assign({}, R(), patch); await API.update("pharmacies", S.pid, { reglages }); D.ph.reglages = reglages; }
@@ -1046,7 +1103,7 @@ function payModal(kind, id) { const F = S.fin, x = kind === "f" ? F.factures.fin
   <div class="row"><button class="btn pri" data-payok="${kind}|${x.id}">Enregistrer</button><button class="btn" data-close="1">Annuler</button></div></div>`, true); }
 function imprimerBordereau(id) { const b = S.fin.bordereaux.find(x => x.id === id);
   API.ventesBordereau(id).then(vs => { $("#print").innerHTML = `<h3>${esc(D.ph.nom)}</h3><div>${esc(D.ph.adresse || "")} ${esc(D.ph.ville || "")} ${esc(D.ph.telephone || "")}</div><hr><div><b>Bordereau B-${b.numero} · ${esc(b.organisme)}</b></div><div>Établi le ${dfr(b.created_at)}</div><hr>
-    ${vs.map(v => `<div class="l"><span>${dfr(v.created_at)} · ticket ${v.id.slice(0, 8)}</span><span>${fmt(v.part_assurance)}</span></div>`).join("")}<hr><div class="l"><b>Total à rembourser</b><b>${fmt(b.montant)}</b></div>`; window.print(); }).catch(e => toast(errMsg(e), true)); }
+    ${vs.map(v => `<div class="l"><span>${dfr(v.created_at)} · ticket ${v.id.slice(0, 8)}</span><span>${fmt(v.part_assurance)}</span></div>`).join("")}<hr><div class="l"><b>Total à rembourser</b><b>${fmt(b.montant)}</b></div>`; imprimerHTML($("#print").innerHTML, null); }).catch(e => toast(errMsg(e), true)); }
 async function exporterFinances(btn) { await run(btn, async () => { const F = S.fin, m0 = moisDe(today()), m1 = new Date(m0.getFullYear(), m0.getMonth() - 1, 1), vs = await API.ventesDepuis(S.pid, m1.toISOString());
   const L = [["Type","Date","Pièce","Libellé","Tiers","Mode","Montant (F)","Reste dû (F)"]];
   vs.forEach(v => L.push(["Vente", dfr(v.created_at), "T-" + v.id.slice(0, 8), "Ticket de caisse" + (v.remise_pct ? ` (remise ${v.remise_pct} %)` : ""), v.organisme || "Client comptoir", v.mode, v.total, ""]));
@@ -1088,6 +1145,8 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (d.invdel) { if (!confirmerTexte("Annuler cette invitation ?")) return; return run(t, async () => { await API.annulerInvitation(d.invdel); S.invs = null; render(true); toast("Invitation annulée : le lien ne fonctionne plus."); }); }
   if (d.posterm) { if (!confirmerTexte("Retirer ce poste ? L'appareil n'affichera plus la liste de l'équipe.")) return; return run(t, async () => { await API.supprimerPoste(d.posterm); const po = POSTE.get(); S.postes = null; render(true); toast("Poste retiré."); }); }
   if (d.ftab) { S.finTab = d.ftab; return render(true); }
+  if (d.reticket) { const v = D.ventes.find(x => x.id === d.reticket); if (v) fenetreTicket(ticketVente(v, D.lignes.filter(l => l.vente_id === v.id))); return; }
+  if (d.impr) { const [k, v] = d.impr.split("|"); setImpr({ [k]: k === "largeur" ? +v : v }); return reglagesImprimante(); }
   if (d.fileretry || d.filedel) { const id = d.fileretry || d.filedel; if (d.filedel && !confirmerTexte("Supprimer définitivement cette vente de la file ?")) return;
     return run(t, async () => { const k = fileKey(S.user.id), box = ((await IDB.get(k)) || []).filter(x => d.filedel ? x.cid !== id : true).map(x => (x.cid === id ? Object.assign(x, { err: null }) : x)); await IDB.set(k, box); closeLayer(); await majFile(); if (d.fileretry) await synchroniser(); render(true); }); }
   if (d.pform) { S.payF = d.pform; render(true); if (d.scroll) { const el = $("#paypanel"); el && el.scrollIntoView({ behavior: "smooth", block: "start" }); } return; }
@@ -1121,6 +1180,10 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "compte") return compte();
   if (a === "verrou") return verrouiller();
   if (a === "inviter") return inviter();
+  if (a === "tkprint") return imprimerTicket(S._ticket);
+  if (a === "tkwa") { const bx = $("#tkwabox"); bx.hidden = false; const i = $("#tkwatel"); i.focus(); $("#tkwago").href = whatsappTicket(S._ticket, ""); return; }
+  if (a === "tkreglages") return reglagesImprimante();
+  if (a === "tkessai") return imprimerTicket(ticketEssai());
   if (a === "import") { S.imp = null; return ecranImport(); }
   if (a === "impautre") { S.imp = null; return ecranImport(); }
   if (a === "impmodele") { telecharger("wergui-modele-import.xlsx", modeleImport(), XLSX_TYPE); return toast("Modèle téléchargé : ouvrez-le dans Excel, remplissez-le, puis importez-le."); }
@@ -1185,6 +1248,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
 });
 document.addEventListener("keydown", e => { if (!D && S.pinFor && $("#root .pinpad")) { if (/^[0-9]$/.test(e.key)) return pinTouche(e.key); if (e.key === "Backspace") return pinTouche("del"); if (e.key === "Enter") return pinTouche("ok"); } if (e.key === "Escape") closeLayer(); if (e.key === "Enter" && e.target.dataset && e.target.dataset.prod) fiche(e.target.dataset.prod); });
 document.addEventListener("input", e => { const t = e.target;
+  if (t.id === "tkwatel") { const a = $("#tkwago"); if (a) a.href = whatsappTicket(S._ticket, t.value); return; }
   if (t.id === "cq") { S.q = t.value; return fillRes(); }
   if (t.id === "sq") { S.q = t.value; return fillStock(); }
   if (t.dataset.cq) { S.cmdQ[t.dataset.cq] = Math.max(0, parseInt(t.value) || 0); return; }
@@ -1204,6 +1268,7 @@ document.addEventListener("change", async e => { const t = e.target; if (!D) ret
   if (t.dataset.four) { const [id, k] = t.dataset.four.split("|"), v = k === "delai_jours" ? Math.max(0, Math.min(60, parseInt(t.value) || 0)) : t.value.trim() || null; return run(null, async () => { const row = await API.update("fournisseurs", id, { [k]: v }); Object.assign(D.fours.find(f => f.id === id), row); toast(`${row.nom} : enregistré.`); }); }
   if (t.dataset.fret) return run(null, async () => { const row = await API.update("fournisseurs", t.dataset.fret, { reprend_produits: t.checked }); Object.assign(D.fours.find(f => f.id === row.id), row); toast(`${row.nom} ${row.reprend_produits ? "reprend" : "ne reprend pas"} les produits.`); });
   if (t.dataset.cfg) { const v = Math.max(+t.min, Math.min(+t.max, parseInt(t.value) || 0)); t.value = v; return run(null, async () => { await saveReglages({ [t.dataset.cfg]: v }); if (t.dataset.cfg === "couverture_jours") { S.couv = v; S.cmdQ = {}; } nav(); toast("Règle enregistrée."); }); }
+  if (t.id === "tmentions") return run(null, async () => { await saveReglages({ ticket_mentions: t.value.trim() }); toast("Mentions du ticket enregistrées."); });
   if (t.id === "orgs") { const list = t.value.split(",").map(x => x.trim()).filter(Boolean); return run(null, async () => { await saveReglages({ organismes: list.length ? list : ["IPM"] }); toast("Organismes enregistrés."); }); }
   if (t.dataset.paym) { const m = t.dataset.paym, cur = R().paiements, next = t.checked ? [...new Set(cur.concat(m))] : cur.filter(x => x !== m); if (!next.length) { t.checked = true; return toast("Gardez au moins un moyen de paiement.", true); } return run(null, async () => { await saveReglages({ paiements: next }); toast(`${m} : ${t.checked ? "accepté" : "désactivé"} en caisse.`); }); } });
 
