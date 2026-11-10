@@ -447,7 +447,7 @@ function ecranImport(msg) { const I = S.imp;
       <li>Colonnes reconnues : nom, présentation, code CIP, prix de vente, prix d'achat, quantité, n° de lot, date de péremption, rayon, grossiste, seuil. Les noms de colonnes n'ont pas besoin d'être exacts : vous vérifierez à l'étape suivante.</li>
       <li>Les produits déjà enregistrés sont retrouvés par leur code, sinon par leur nom et leur présentation : rien n'est créé en double. <b>Les quantités, elles, s'ajoutent au stock</b> : n'importez pas deux fois le même stock.</li></ol>
     <div class="row"><label class="btn pri" style="cursor:pointer">Choisir le fichier<input type="file" id="impfile" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden></label><button class="btn" data-act="impmodele">Télécharger le modèle</button></div>
-    <p class="muted" style="font-size:.85rem">Astuce : le fichier « Exporter en Excel » des paramètres se réimporte tel quel.</p></div>`);
+    <p class="muted" style="font-size:.85rem">Astuce : le fichier de stock « Exporter en Excel » des paramètres se réimporte tel quel.</p></div>`);
   const L = lignesImport(), ok = L.filter(x => !x.err.length), ko = L.filter(x => x.err.length), stock = ok.filter(x => x.o.quantite > 0 && !x.avert.some(a => /périmé/.test(a)));
   const col = k => `<select data-impmap="${k}"><option value="">— aucune —</option>${I.entetes.map((h, i) => `<option value="${i}" ${I.map[k] === i ? "selected" : ""}>${esc(h)}</option>`).join("")}</select>`;
   const st = x => x.err.length ? `<span class="st bad">${esc(x.err.join(", "))}</span>` : x.avert.length ? `<span class="st warn">${esc(x.avert.join(", "))}</span>` : '<span class="st ok">OK</span>';
@@ -464,10 +464,10 @@ async function lancerImport(btn) { const lignes = lignesImport().filter(x => !x.
   await run(btn, async () => { for (let i = 0; i < lignes.length; i += 1000) { const r = await API.importer(S.pid, lignes.slice(i, i + 1000), S.imp.maj); Object.entries(r).forEach(([k, v]) => tot[k] = (tot[k] || 0) + v); }
     S.imp = null; closeLayer(); await reload(true);
     toast(`Import terminé : ${pl(tot.crees || 0, "produit créé", "produits créés")}, ${pl(tot.mis_a_jour || 0, "mis à jour", "mis à jour")}${tot.lots ? `, ${pl(tot.lots, "lot")} (${nb(tot.boites)} boîtes) en stock` : ""}${tot.perimes_ignores ? `. ${pl(tot.perimes_ignores, "lot périmé ignoré", "lots périmés ignorés")}` : ""}.`); }); }
-const modeleImport = () => csv([["Produit", "Présentation", "Code (CIP)", "Rayon", "Grossiste", "Prix de vente", "Prix d'achat", "Quantité", "Lot", "Péremption"],
+const modeleImport = () => xlsx([["Produit", "Présentation", "Code (CIP)", "Rayon", "Grossiste", "Prix de vente", "Prix d'achat", "Quantité", "Lot", "Péremption"],
   ["Doliprane 1000 mg", "boîte de 8 comprimés", "3400935955838", "Antalgiques", "Laborex", 1250, 950, 40, "4LW8A", "31/12/2027"],
   ["Coartem 20/120 mg", "boîte de 24 comprimés", "", "Antipaludiques", "Cophase", 3900, 2900, 25, "KA1203", "06/2027"],
-  ["Smecta", "boîte de 30 sachets", "", "Digestif", "Laborex", 3800, 2800, "", "", ""]]);
+  ["Smecta", "boîte de 30 sachets", "", "Digestif", "Laborex", 3800, 2800, "", "", ""]], "Produits");
 
 /* ================================================================ écrans de connexion */
 function authScreen(mode, msg, err) {
@@ -566,11 +566,36 @@ function delCompte() { const tits = S.mems.filter(m => m.role === "titulaire").m
   <div class="field"><label for="delconf">Tapez SUPPRIMER pour confirmer</label><input id="delconf" autocomplete="off"></div>
   <div class="row"><button class="btn bad" data-act="delcompteok">Supprimer définitivement</button><button class="btn" data-close="1">Annuler</button></div></div>`, true); }
 function telecharger(nom, texte, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([texte], { type: type || "text/plain;charset=utf-8" })); a.download = nom; document.body.appendChild(a); a.click(); a.remove(); }
+// Fichier Excel (.xlsx) écrit sur l'appareil, sans bibliothèque : s'ouvre correctement dans Excel, WPS, Google Sheets…
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u8 => { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function zipper(fichiers) { const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  for (const [nom, contenu] of fichiers) { const n = enc.encode(nom), d = enc.encode(contenu), c = crc32(d), h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint32(14, c, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, n.length, true);
+    const ce = new DataView(new ArrayBuffer(46)); ce.setUint32(0, 0x02014b50, true); ce.setUint16(4, 20, true); ce.setUint16(6, 20, true); ce.setUint16(8, 0x0800, true); ce.setUint32(16, c, true); ce.setUint32(20, d.length, true); ce.setUint32(24, d.length, true); ce.setUint16(28, n.length, true); ce.setUint32(42, off, true);
+    parts.push(new Uint8Array(h.buffer), n, d); central.push(new Uint8Array(ce.buffer), n); off += 30 + n.length + d.length; }
+  const tailleC = central.reduce((s, x) => s + x.length, 0), fin = new DataView(new ArrayBuffer(22));
+  fin.setUint32(0, 0x06054b50, true); fin.setUint16(8, fichiers.length, true); fin.setUint16(10, fichiers.length, true); fin.setUint32(12, tailleC, true); fin.setUint32(16, off, true);
+  const tout = [...parts, ...central, new Uint8Array(fin.buffer)], out = new Uint8Array(tout.reduce((s, x) => s + x.length, 0)); let p = 0; tout.forEach(x => { out.set(x, p); p += x.length; }); return out; }
+function xlsx(rows, feuille) { const X = s => String(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const col = i => { let s = ""; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const larg = []; rows.forEach(r => r.forEach((c, i) => { larg[i] = Math.min(50, Math.max(larg[i] || 8, String(c ?? "").length + 2)); }));
+  const lignes = rows.map((r, j) => `<row r="${j + 1}">${r.map((c, i) => { if (c == null || c === "") return ""; const ref = col(i) + (j + 1), st = j === 0 ? ' s="1"' : "";
+      return typeof c === "number" && isFinite(c) ? `<c r="${ref}"${st}><v>${c}</v></c>` : `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${X(c)}</t></is></c>`; }).join("")}</row>`).join("");
+  const nomF = X(String(feuille || "Feuille1").replace(/[\\/?*[\]:]/g, " ").slice(0, 31));
+  return zipper([
+    ["[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+    ["_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${nomF}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+    ["xl/styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+    ["xl/worksheets/sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${larg.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols><sheetData>${lignes}</sheetData></worksheet>`]]); }
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const csv = rows => "\ufeff" + rows.map(r => r.map(c => { c = c == null ? "" : String(c); return /[;"\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(";")).join("\r\n");
 async function exporterPharmacie(btn) { await run(btn, async () => { const { v, l } = await API.toutesVentes(S.pid), d = iso(today());
-  telecharger(`wergui-stock-${d}.csv`, csv([["Produit","Présentation","Rayon","Grossiste","Prix de vente","Prix d'achat","Lot","Péremption","Quantité"]].concat(D.produits.flatMap(p => { const ls = lotsOf(p); return (ls.length ? ls : [null]).map(x => [p.nom, p.presentation, rayonOf(p), fourOf(p).nom, p.prix_vente, can("achat") ? p.prix_achat : "", x ? x.numero : "", x ? dfr(x.peremption) : "", x ? x.quantite : 0]); }))), "text/csv;charset=utf-8");
-  setTimeout(() => telecharger(`wergui-ventes-${d}.csv`, csv([["Date","Heure","Ticket","Produit","Quantité","Prix unitaire","Total du ticket","Paiement","Organisme","Vendeur"]].concat(v.flatMap(x => l.filter(y => y.vente_id === x.id).map(y => [dfr(x.created_at), hm(x.created_at), x.id.slice(0, 8), (byId(y.produit_id) || { nom: "Produit supprimé" }).nom, y.quantite, y.prix_unitaire, x.total, x.mode, x.organisme, nomMembre(x.user_id)])))), "text/csv;charset=utf-8"), 600);
-  toast("Deux fichiers téléchargés (stock et ventes), à ouvrir dans Excel."); }); }
+  telecharger(`wergui-stock-${d}.xlsx`, xlsx([["Produit","Présentation","Rayon","Grossiste","Prix de vente","Prix d'achat","Lot","Péremption","Quantité"]].concat(D.produits.flatMap(p => { const ls = lotsOf(p); return (ls.length ? ls : [null]).map(x => [p.nom, p.presentation, rayonOf(p), fourOf(p).nom, p.prix_vente, can("achat") ? p.prix_achat : "", x ? x.numero : "", x ? dfr(x.peremption) : "", x ? x.quantite : 0]); })), "Stock"), XLSX_TYPE);
+  setTimeout(() => telecharger(`wergui-ventes-${d}.xlsx`, xlsx([["Date","Heure","Ticket","Produit","Quantité","Prix unitaire","Total du ticket","Paiement","Organisme","Vendeur"]].concat(v.flatMap(x => l.filter(y => y.vente_id === x.id).map(y => [dfr(x.created_at), hm(x.created_at), x.id.slice(0, 8), (byId(y.produit_id) || { nom: "Produit supprimé" }).nom, y.quantite, y.prix_unitaire, x.total, x.mode, x.organisme, nomMembre(x.user_id)]))), "Ventes"), XLSX_TYPE), 600);
+  toast("Deux fichiers Excel téléchargés : stock et ventes."); }); }
 
 /* ================================================================ tableau de bord */
 const V = {};
@@ -728,7 +753,7 @@ SET.pharmacie = () => { const p = D.ph; return `<section class="panel"><header><
   <div class="field"><label for="cwa">WhatsApp du titulaire</label><input type="tel" id="cwa" value="${esc(p.whatsapp || "")}"></div><div class="field full"><label for="cticket">Message en bas des tickets</label><input type="text" id="cticket" value="${esc(p.message_ticket || "")}"></div></div>
   <div class="row"><button class="btn pri" data-act="savepharma">Enregistrer</button></div></section>
   ${posteSection()}
-  <section class="panel"><header><div><h2>Données de la pharmacie</h2><p>Vos données vous appartiennent : téléchargez-les à tout moment (stock avec lots, et toutes les ventes).</p></div></header><div class="row"><button class="btn" data-act="exportph">Exporter en Excel (CSV)</button></div></section>
+  <section class="panel"><header><div><h2>Données de la pharmacie</h2><p>Vos données vous appartiennent : téléchargez-les à tout moment (stock avec lots, et toutes les ventes).</p></div></header><div class="row"><button class="btn" data-act="exportph">Exporter en Excel</button></div></section>
   <section class="panel"><header><div><h2>Transférer le rôle de titulaire</h2><p>Le nouveau titulaire aura l'accès complet. Vous deviendrez pharmacien adjoint.</p></div></header>
   ${D.membres.filter(m => m.actif && m.user_id !== S.user.id).length ? `<div class="row"><select id="trto" style="flex:1 1 200px">${D.membres.filter(m => m.actif && m.user_id !== S.user.id).map(m => `<option value="${m.user_id}">${esc(m.nom)} · ${roleName(m.role)}</option>`).join("")}</select><button class="btn" data-act="transfert">Transférer</button></div>` : '<p class="muted">Ajoutez d\'abord un membre à l\'équipe.</p>'}</section>
   <section class="panel scanbad"><header><div><h2>Supprimer la pharmacie</h2><p>Supprime définitivement la pharmacie et toutes ses données : stock, ventes, commandes, équipe. Pensez à exporter vos données avant.</p></div></header>
@@ -1028,7 +1053,7 @@ async function exporterFinances(btn) { await run(btn, async () => { const F = S.
   F.factures.forEach(x => L.push(["Achat", dfr(x.date_facture), x.numero || "", "Facture grossiste" + (x.avoir_utilise ? ` (avoir déduit ${x.avoir_utilise})` : ""), (D.fours.find(f => f.id === x.fournisseur_id) || { nom: "" }).nom, resteF(x) ? "À payer, échéance " + dfr(x.echeance) : "Payée", x.montant, resteF(x)]));
   F.depenses.forEach(x => L.push(["Dépense", dfr(x.date_depense), "", x.libelle, x.categorie, x.mode, x.montant, ""]));
   F.bordereaux.forEach(b => L.push(["Créance assurance", dfr(b.created_at), "B-" + b.numero, "Bordereau tiers payant", b.organisme, resteB(b) ? (b.envoye_le ? "Envoyé le " + dfr(b.envoye_le) : "À envoyer") : "Payé", b.montant, resteB(b)]));
-  telecharger(`wergui-comptable-${iso(today()).slice(0, 7)}.csv`, csv(L), "text/csv;charset=utf-8");
+  telecharger(`wergui-comptable-${iso(today()).slice(0, 7)}.xlsx`, xlsx(L, "Comptabilité"), XLSX_TYPE);
   toast("Fichier pour le comptable téléchargé (ouvrable dans Excel)."); }); }
 
 /* ================================================================ événements */
@@ -1098,7 +1123,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "inviter") return inviter();
   if (a === "import") { S.imp = null; return ecranImport(); }
   if (a === "impautre") { S.imp = null; return ecranImport(); }
-  if (a === "impmodele") { telecharger("wergui-modele-import.csv", modeleImport(), "text/csv;charset=utf-8"); return toast("Modèle téléchargé : ouvrez-le dans Excel, remplissez-le, puis importez-le."); }
+  if (a === "impmodele") { telecharger("wergui-modele-import.xlsx", modeleImport(), XLSX_TYPE); return toast("Modèle téléchargé : ouvrez-le dans Excel, remplissez-le, puis importez-le."); }
   if (a === "impgo") return lancerImport(t);
   if (a === "invcreer") { const role = (document.querySelector("[data-ivrole][aria-pressed=true]") || {}).dataset?.ivrole || "vendeur", nom = $("#ivnom").value.trim();
     return run(t, async () => { const code = await API.creerInvitation(S.pid, nom, role, permOf(role)); S.invs = null; partagerInvitation(code, nom, role); render(true); }); }
