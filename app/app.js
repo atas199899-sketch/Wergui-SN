@@ -503,10 +503,11 @@ function imprimerHTML(html, largeurMm, hauteurMm) { $("#print").innerHTML = html
   st.textContent = largeurMm ? `@page{size:${largeurMm}mm ${Math.max(60, Math.round(hauteurMm))}mm;margin:0}#print{width:${largeurMm - 4}mm;padding:2mm}` : "@page{size:auto;margin:12mm}#print{width:auto}";
   setTimeout(() => window.print(), 60); }
 function ouvrirLien(u) { location.href = u; }
-function imprimerTicket(t) { const I = IMPR(), cols = I.largeur === 80 ? 48 : 32, texte = sansAccents(ticketTexte(t, cols));
+function imprimerTicket(t) { const I = IMPR(), cols = I.largeur === 80 ? 48 : I.largeur === 210 ? 42 : 32, brut = ticketTexte(t, cols), texte = I.methode === "rawbt" ? sansAccents(brut) : brut;
   if (I.methode === "rawbt") { // Android : application RawBT reliée à l'imprimante thermique (Bluetooth, USB ou réseau)
     const e = new TextEncoder(), parts = [[0x1b, 0x40], [0x1b, 0x74, 0x00], ...e.encode(texte + "\n\n\n\n").reduce((a, b) => { a.push([b]); return a; }, []), [0x1d, 0x56, 0x42, 0x00]].flat();
     let bin = ""; parts.forEach(b => bin += String.fromCharCode(b)); return ouvrirLien("rawbt:base64," + btoa(bin)); }
+  if (I.largeur === 210) return imprimerHTML(`<pre class="ticket a4">${esc(texte)}</pre>`, null);
   const lignes = texte.split("\n").length; imprimerHTML(`<pre class="ticket">${esc(texte)}</pre>`, I.largeur, lignes * 4.2 + 14); }
 // Ticket en PDF (écrit sur l'appareil, sans bibliothèque) : rouleau de 80 mm, police Courier, accents conservés (WinAnsi).
 const CP1252 = { "€": 128, "‚": 130, "„": 132, "…": 133, "‰": 137, "‹": 139, "Œ": 140, "‘": 145, "’": 146, "“": 147, "”": 148, "•": 149, "–": 150, "—": 151, "™": 153, "›": 155, "œ": 156, "Ÿ": 159 };
@@ -540,13 +541,13 @@ function texteWhatsApp(t) { const F = n => Math.round(n || 0).toLocaleString("fr
 function whatsappTicket(t, tel) { return `https://wa.me/${normPhone(tel)}?text=${encodeURIComponent(texteWhatsApp(t))}`; }
 function fenetreTicket(t, titre) { S._ticket = t; const I = IMPR();
   layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Ticket"><div class="top"><div><h2>${esc(titre || "Ticket " + t.num)}</h2><p>${fmt(t.total)} · ${esc(t.mode)}${t.org ? " · " + esc(t.org) : ""}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
-    <pre class="ticketvue">${esc(ticketTexte(t, I.largeur === 80 ? 48 : 32))}</pre>
+    <pre class="ticketvue">${esc(ticketTexte(t, I.largeur === 80 ? 48 : I.largeur === 210 ? 42 : 32))}</pre>
     <div class="row"><button class="btn pri" data-act="tkprint">Imprimer</button><button class="btn" data-act="tkpdf">Partager en PDF</button><button class="btn" data-act="tkwa">WhatsApp (texte)</button><button class="btn" data-close="1">Terminer</button></div>
     <div class="row" id="tkwabox" hidden><input id="tkwatel" type="tel" inputmode="tel" placeholder="N° du client (ex. 77 123 45 67)" style="flex:1"><a class="btn pri" id="tkwago" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir WhatsApp</a></div>
-    <button class="linkbtn" data-act="tkreglages">Imprimante de cet appareil : ${I.largeur} mm · ${I.methode === "rawbt" ? "application RawBT" : "impression du navigateur"} · ${I.quand === "auto" ? "impression automatique" : I.quand === "jamais" ? "pas de fenêtre après la vente" : "fenêtre après chaque vente"}</button></div>`, true); }
+    <button class="linkbtn" data-act="tkreglages">Imprimante de cet appareil : ${I.largeur === 210 ? "A4" : I.largeur + " mm"} · ${I.methode === "rawbt" ? "application RawBT" : "impression du navigateur"} · ${I.quand === "auto" ? "impression automatique" : I.quand === "jamais" ? "pas de fenêtre après la vente" : "fenêtre après chaque vente"}</button></div>`, true); }
 function reglagesImprimante() { const I = IMPR(), opt = (k, v, l) => `<button data-impr="${k}|${v}" aria-pressed="${String(I[k]) === String(v)}">${l}</button>`;
   layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Imprimante"><div class="top"><div><h2>Imprimante de cet appareil</h2><p>Ces réglages ne concernent que cet appareil.</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
-    <div class="field"><label>Largeur du papier</label><div class="seg" role="group">${opt("largeur", 58, "58 mm (petit rouleau)")}${opt("largeur", 80, "80 mm")}</div></div>
+    <div class="field"><label>Largeur du papier</label><div class="seg" role="group">${opt("largeur", 58, "58 mm (petit rouleau)")}${opt("largeur", 80, "80 mm")}${opt("largeur", 210, "A4 (imprimante de bureau)")}</div><small class="muted">Sans imprimante à tickets, le bouton « Imprimer » propose d'enregistrer une page A4 : pour envoyer le ticket au client, utilisez plutôt « Partager en PDF ».</small></div>
     <div class="field"><label>Après chaque vente</label><div class="seg" role="group">${opt("quand", "demander", "Montrer le ticket")}${opt("quand", "auto", "Imprimer tout de suite")}${opt("quand", "jamais", "Rien")}</div></div>
     <div class="field"><label>Comment imprimer</label><div class="seg" role="group">${opt("methode", "navigateur", "Impression du navigateur")}${opt("methode", "rawbt", "Application RawBT (Android)")}</div>
       <small class="muted">${I.methode === "rawbt" ? "Installez l'application gratuite RawBT (Play Store) et reliez-y votre imprimante thermique Bluetooth, USB ou Wi-Fi : le ticket sort directement, sans fenêtre d'impression." : "Le ticket passe par la fenêtre d'impression de l'appareil (ordinateur avec l'imprimante installée, ou Android avec le service d'impression de l'imprimante)."}</small></div>
