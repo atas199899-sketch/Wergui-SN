@@ -317,3 +317,4 @@ input:not([type]),input[type=email],input[type=password]{border:1px solid var(--
 /* ticket de caisse */
 .ticketvue{font:12px/1.35 "JetBrains Mono",ui-monospace,monospace;background:#fff;color:#111;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:46vh;overflow:auto;white-space:pre;margin:0 0 12px}
 @media print{#print pre.ticket{font:2.6mm/1.3 ui-monospace,"Courier New",monospace;margin:0;white-space:pre;color:#000}}
+.caissebar.requise{border-color:var(--acc);background:var(--acc-soft)}

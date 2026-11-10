@@ -14,6 +14,9 @@ $$ begin begin execute sql; exception when others then raise notice 'OK : % (ref
 -- Titulaire crée sa pharmacie
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
 select public.creer_pharmacie('Pharmacie Test','Dakar','33 000 00 00','Dr Test') as p \gset
+-- (les ventes des tests ci-dessous se font sans gestion de caisse ; la règle « caisse obligatoire » est testée plus loin)
+reset role; update pharmacies set reglages = reglages || '{"caisse_obligatoire":false}' where id = :'p';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000a');
 select pg_temp.ok((select count(*) from rayons where pharmacy_id=:'p')=9,'9 rayons par défaut');
 select pg_temp.ok((select count(*) from fournisseurs where pharmacy_id=:'p')=4,'4 grossistes par défaut');
 insert into produits (pharmacy_id,nom,presentation,prix_vente,prix_achat,codes) values (:'p','Paracétamol 500 mg','boîte de 16',600,420,'{03400934507786}') returning id as prod \gset
@@ -327,6 +330,23 @@ select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
 select pg_temp.echoue(format('select public.importer_produits(%L,''[{"ligne":2,"nom":"Pirate"}]'',true)',:'p'),'import dans la pharmacie d''un autre refusé');
 reset role;
 
+
+-- Pas de vente sans caisse ouverte
+reset role; update pharmacies set reglages = reglages || '{"caisse_obligatoire":true}' where id = :'p'; update lots set quantite = quantite + 10 where id = :'lot_long'; update caisses set statut='fermee', fermee_le=now() where pharmacy_id = :'p' and statut='ouverte';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select pg_temp.echoue(format('select public.enregistrer_vente_hors_ligne(%L,gen_random_uuid(),''[{"produit_id":"%s","quantite":1}]'',''Espèces'',0,null,now(),false)',:'p',:'prod'),'caisse fermée : vente refusée');
+select pg_temp.echoue(format('select public.enregistrer_vente(%L,''[{"produit_id":"%s","quantite":1}]'',''Espèces'',0,null)',:'p',:'prod'),'caisse fermée : refusée aussi par l''ancienne fonction');
+select public.enregistrer_vente_hors_ligne(:'p',gen_random_uuid(),('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Espèces',0,null,now()-interval '1 hour',true);
+select pg_temp.ok(true,'vente faite hors ligne envoyée après coup : acceptée même caisse fermée');
+select public.ouvrir_caisse(:'p',5000);
+select public.enregistrer_vente_hors_ligne(:'p',gen_random_uuid(),('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Espèces',0,null,now(),false);
+select pg_temp.ok(true,'caisse ouverte (par le vendeur) : vente acceptée');
+select public.fermer_caisse(:'p',5000);
+reset role; update pharmacies set reglages = reglages || '{"caisse_obligatoire":false}' where id = :'p';
+select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000b');
+select public.enregistrer_vente_hors_ligne(:'p',gen_random_uuid(),('[{"produit_id":"'||:'prod'||'","quantite":1}]')::jsonb,'Espèces',0,null,now(),false);
+select pg_temp.ok(true,'règle désactivée par le titulaire : vente acceptée sans caisse');
+reset role;
 
 -- Compte et pharmacie : suppression, transfert
 select pg_temp.en_tant_que('00000000-0000-0000-0000-00000000000c');
