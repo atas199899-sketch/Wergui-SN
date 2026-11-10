@@ -508,11 +508,40 @@ function imprimerTicket(t) { const I = IMPR(), cols = I.largeur === 80 ? 48 : 32
     const e = new TextEncoder(), parts = [[0x1b, 0x40], [0x1b, 0x74, 0x00], ...e.encode(texte + "\n\n\n\n").reduce((a, b) => { a.push([b]); return a; }, []), [0x1d, 0x56, 0x42, 0x00]].flat();
     let bin = ""; parts.forEach(b => bin += String.fromCharCode(b)); return ouvrirLien("rawbt:base64," + btoa(bin)); }
   const lignes = texte.split("\n").length; imprimerHTML(`<pre class="ticket">${esc(texte)}</pre>`, I.largeur, lignes * 4.2 + 14); }
-function whatsappTicket(t, tel) { const n = normPhone(tel), txt = ticketTexte(t, 32); return `https://wa.me/${n}?text=${encodeURIComponent("Votre ticket – " + D.ph.nom + "\n```\n" + txt + "\n```")}`; }
+// Ticket en PDF (écrit sur l'appareil, sans bibliothèque) : rouleau de 80 mm, police Courier, accents conservés (WinAnsi).
+const CP1252 = { "€": 128, "‚": 130, "„": 132, "…": 133, "‰": 137, "‹": 139, "Œ": 140, "‘": 145, "’": 146, "“": 147, "”": 148, "•": 149, "–": 150, "—": 151, "™": 153, "›": 155, "œ": 156, "Ÿ": 159 };
+const winAnsi = s => [...String(s).replace(/[  ]/g, " ")].map(c => { const n = c.charCodeAt(0); return n < 128 || (n >= 160 && n < 256) ? c : CP1252[c] ? String.fromCharCode(CP1252[c]) : c === "×" ? "x" : "?"; }).join("");
+const pdfEsc = s => s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+function pdfTicket(t) { const lignes = ticketTexte(t, 32).split("\n"), fs = 10.5, lh = 13.2, mx = 13, W = 226.77, H = Math.round(mx * 2 + lignes.length * lh + 8);
+  const sep = lignes.findIndex(l => /^-+$/.test(l)); let y = H - mx - fs, flux = "BT\n";
+  lignes.forEach((l, i) => { const gras = i < sep || /^(TOTAL|A payer)/.test(l); flux += `${gras ? "/F2" : "/F1"} ${fs} Tf 1 0 0 1 ${mx} ${y.toFixed(2)} Tm (${pdfEsc(winAnsi(l))}) Tj\n`; y -= lh; });
+  flux += "ET";
+  const objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>",
+    `<< /Length ${flux.length} >>\nstream\n${flux}\nendstream`, `<< /Title (${pdfEsc(winAnsi("Ticket " + t.num + " - " + D.ph.nom))}) /Producer (Wergui SN) >>`];
+  let out = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"; const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length; out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("");
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Info 7 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const u8 = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) u8[i] = out.charCodeAt(i) & 255; return u8; }
+async function partagerTicketPDF(t) { const nom = `ticket-${t.num}.pdf`, octets = pdfTicket(t);
+  try { const f = new File([octets], nom, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: "Ticket " + t.num, text: "Votre ticket – " + D.ph.nom }); return; } }
+  catch (e) { if (e && e.name === "AbortError") return; }
+  telecharger(nom, octets, "application/pdf"); toast("PDF du ticket téléchargé : joignez-le dans WhatsApp (trombone → Document)."); }
+function texteWhatsApp(t) { const F = n => Math.round(n || 0).toLocaleString("fr-FR").replace(/[  ]/g, " ") + " F", d = new Date(t.quand), L = [];
+  L.push(`*${D.ph.nom}*`); if (D.ph.adresse || D.ph.ville) L.push([D.ph.adresse, D.ph.ville].filter(Boolean).join(", ")); if (D.ph.telephone) L.push("Tél. " + D.ph.telephone);
+  L.push("", `Ticket ${t.num} · ${d.toLocaleDateString("fr-FR")} ${hm(t.quand)}`, "");
+  t.items.forEach(i => L.push(`• ${i.nom} : ${i.q} × ${F(i.pu)} = ${F(i.q * i.pu)}`));
+  if (t.remise) L.push(`Remise ${t.remise} %`); L.push("", `*Total : ${F(t.total)}*`);
+  if (t.mode === "Assurance") L.push(`Part ${t.org || "assurance"} : ${F(t.part)} · à payer : ${F(t.total - t.part)}`);
+  L.push(`Paiement : ${t.mode}`, "", D.ph.message_ticket || "Merci de votre visite."); return L.join("\n"); }
+function whatsappTicket(t, tel) { return `https://wa.me/${normPhone(tel)}?text=${encodeURIComponent(texteWhatsApp(t))}`; }
 function fenetreTicket(t, titre) { S._ticket = t; const I = IMPR();
   layer(`<div class="modal" role="dialog" aria-modal="true" aria-label="Ticket"><div class="top"><div><h2>${esc(titre || "Ticket " + t.num)}</h2><p>${fmt(t.total)} · ${esc(t.mode)}${t.org ? " · " + esc(t.org) : ""}</p></div><button class="x" data-close="1" aria-label="Fermer">×</button></div>
     <pre class="ticketvue">${esc(ticketTexte(t, I.largeur === 80 ? 48 : 32))}</pre>
-    <div class="row"><button class="btn pri" data-act="tkprint">Imprimer</button><button class="btn" data-act="tkwa">Envoyer par WhatsApp</button><button class="btn" data-close="1">Terminer</button></div>
+    <div class="row"><button class="btn pri" data-act="tkprint">Imprimer</button><button class="btn" data-act="tkpdf">Partager en PDF</button><button class="btn" data-act="tkwa">WhatsApp (texte)</button><button class="btn" data-close="1">Terminer</button></div>
     <div class="row" id="tkwabox" hidden><input id="tkwatel" type="tel" inputmode="tel" placeholder="N° du client (ex. 77 123 45 67)" style="flex:1"><a class="btn pri" id="tkwago" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir WhatsApp</a></div>
     <button class="linkbtn" data-act="tkreglages">Imprimante de cet appareil : ${I.largeur} mm · ${I.methode === "rawbt" ? "application RawBT" : "impression du navigateur"} · ${I.quand === "auto" ? "impression automatique" : I.quand === "jamais" ? "pas de fenêtre après la vente" : "fenêtre après chaque vente"}</button></div>`, true); }
 function reglagesImprimante() { const I = IMPR(), opt = (k, v, l) => `<button data-impr="${k}|${v}" aria-pressed="${String(I[k]) === String(v)}">${l}</button>`;
@@ -1185,6 +1214,7 @@ document.addEventListener("click", async e => { const t = e.target.closest("butt
   if (a === "verrou") return verrouiller();
   if (a === "inviter") return inviter();
   if (a === "tkprint") return imprimerTicket(S._ticket);
+  if (a === "tkpdf") return partagerTicketPDF(S._ticket);
   if (a === "tkwa") { const bx = $("#tkwabox"); bx.hidden = false; const i = $("#tkwatel"); i.focus(); $("#tkwago").href = whatsappTicket(S._ticket, ""); return; }
   if (a === "tkreglages") return reglagesImprimante();
   if (a === "tkessai") return imprimerTicket(ticketEssai());
