@@ -70,12 +70,12 @@ if os.environ.get('COURT'):   # version courte (~1 min) : l'essentiel
 
 # ------------------------------------------------------------------ voix (edge-tts, fr-CH-FabriceNeural, vitesse normale)
 import asyncio, edge_tts
-RATE = 24000; GAP, SLIDE_GAP = 0.8, 1.1
+RATE = 24000; GAP, SLIDE_GAP = float(os.environ.get('PAUSE', 0.8)), float(os.environ.get('PAUSE_DIAPO', 1.1)); TAUX = os.environ.get('TAUX', '+0%')   # vitesse de la voix
 def oral(t):  # texte lu par Fabrice (voix suisse) : noms propres écrits comme ils se prononcent
     return (t.replace('Ouergui ès ène', 'Ouergui S N').replace('ouergui ès ène', 'ouergui S N'))
 VITE_MARQUE = 1.2   # « Wergui » prononcé 20 % plus vite (validé à l'écoute)
 async def tts(texte, f):
-    c = edge_tts.Communicate(texte, 'fr-CH-FabriceNeural', rate='+0%', proxy=os.environ.get('HTTPS_PROXY'), boundary='WordBoundary'); mots = []
+    c = edge_tts.Communicate(texte, 'fr-CH-FabriceNeural', rate=TAUX, proxy=os.environ.get('HTTPS_PROXY'), boundary='WordBoundary'); mots = []
     with open(f, 'wb') as out:
         async for ch in c.stream():
             if ch['type'] == 'audio': out.write(ch['data'])
