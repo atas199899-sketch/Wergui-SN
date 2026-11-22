@@ -59,7 +59,7 @@ if os.environ.get('COURT'):   # version courte (~1 min) : l'essentiel
      sl('dashboard', ["Fini le cahier : chaque matin, le tableau de bord vous dit quoi faire."], k='Tableau de bord'),
      sl('scanner', ["Scannez une boîte : le médicament, le lot et la date de péremption se remplissent tout seuls."], k='Scanner'),
      sl('caisse', ["À la caisse, les lots qui périment en premier sortent en premier. Vous encaissez en espèces, par Wave ou Orange Money."], k='Caisse'),
-     sl('peremptions', ["Ouergui ès ène vous alerte trois mois avant la péremption, pour vendre ou rendre au grossiste à temps."], ["Wergui SN vous alerte 3 mois avant la péremption, pour vendre ou rendre au grossiste à temps."], k='Péremptions'),
+     sl('peremptions', ["Ouergui ès ène vous alerte trois mois avant la péremption, pour les vendre à temps, ou les retourner au grossiste."], ["Wergui SN vous alerte 3 mois avant la péremption, pour les vendre à temps, ou les retourner au grossiste."], k='Péremptions'),
      sl('commandes', ["Les commandes se calculent toutes seules, et partent par WhatsApp."], k='Commandes'),
      sl('finances2', ["La caisse, les assurances et le bénéfice du mois sont suivis automatiquement."], k='Finances', t='Votre argent sous contrôle', b=['Caisse ouverte et clôturée', 'Assurances et grossistes', 'Bénéfice du mois']),
      sl('mobile', ["Sur téléphone, tablette ou ordinateur, même sans internet."], b=['Téléphone, tablette, ordinateur', 'Même sans internet', 'En français']),
