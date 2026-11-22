@@ -1,6 +1,5 @@
 """Vidéo de présentation Wergui SN (voix IA Piper, diapositives, sous-titres) — 1920x1080."""
 import json, os, re, subprocess, wave, sys
-from piper import PiperVoice, SynthesisConfig
 
 D = os.path.dirname(os.path.abspath(__file__)); CAP = D + '/cap/'; OUT = D + '/build/'; os.makedirs(OUT, exist_ok=True)
 VOIX = sys.argv[1] if len(sys.argv) > 1 else 'fr_FR-siwis-medium'
@@ -51,22 +50,46 @@ S = [
       sub=["Wergui SN, en partenariat avec Groupe Référence Afrique.", "Essayez gratuitement sur werguisn.pages.dev"]),
 ]
 
-# ------------------------------------------------------------------ voix
-voice = PiperVoice.load(f'{D}/voix/{VOIX}.onnx'); cfg = SynthesisConfig(length_scale=1.06)
-RATE = voice.config.sample_rate; LEAD, GAP, TAIL = 0.45, 0.32, 0.65
+# ------------------------------------------------------------------ voix (edge-tts, fr-CH-FabriceNeural, vitesse normale)
+import asyncio, edge_tts
+RATE = 24000; GAP, SLIDE_GAP = 0.8, 1.1
+def oral(t):  # texte lu par Fabrice (voix suisse) : noms propres écrits comme ils se prononcent
+    return (t.replace('Ouergui ès ène', 'Ouergui S N').replace('ouergui ès ène', 'ouergui S N'))
+VITE_MARQUE = 1.2   # « Wergui » prononcé 20 % plus vite (validé à l'écoute)
+async def tts(texte, f):
+    c = edge_tts.Communicate(texte, 'fr-CH-FabriceNeural', rate='+0%', proxy=os.environ.get('HTTPS_PROXY'), boundary='WordBoundary'); mots = []
+    with open(f, 'wb') as out:
+        async for ch in c.stream():
+            if ch['type'] == 'audio': out.write(ch['data'])
+            elif ch['type'] == 'WordBoundary': mots.append((ch['offset'] / 1e7, ch['duration'] / 1e7, ch['text']))
+    return mots
+def phrase_pcm(texte):
+    mp3, wav = OUT + 'tmp.mp3', OUT + 'tmp.wav'
+    for essai in range(4):
+        try: mots = asyncio.run(tts(oral(texte), mp3)); break
+        except Exception as e: print('nouvel essai', e); import time; time.sleep(2 * (essai + 1))
+    marque = [(a, d) for a, d, w in mots if w.lower().startswith('ouergui')]
+    if marque:   # accélère seulement le mot « Wergui »
+        parts, t, k = [], 0.0, 0
+        for a, d in marque:
+            parts.append(f"[0:a]atrim={t:.3f}:{a:.3f},asetpts=PTS-STARTPTS[p{k}]"); parts.append(f"[0:a]atrim={a:.3f}:{a + d:.3f},asetpts=PTS-STARTPTS,atempo={VITE_MARQUE}[p{k + 1}]"); k += 2; t = a + d
+        parts.append(f"[0:a]atrim={t:.3f},asetpts=PTS-STARTPTS[p{k}]"); k += 1
+        fc = ";".join(parts) + ";" + "".join(f"[p{i}]" for i in range(k)) + f"concat=n={k}:v=0:a=1,"
+    else: fc = "[0:a]"
+    fc += "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse[o]"
+    subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', mp3, '-filter_complex', fc, '-map', '[o]', '-ac', '1', '-ar', str(RATE), wav], check=True)
+    with wave.open(wav, 'rb') as wr: return wr.readframes(wr.getnframes())
 def silence(sec): return b'\x00\x00' * int(RATE * sec)
 timeline = []; t0 = 0.0
 for i, sl in enumerate(S):
-    subs = sl.get('sub', sl['s']); pcm = silence(LEAD); cur = LEAD; cues = []
+    subs = sl.get('sub', sl['s']); lead = 0.6 if i == 0 else SLIDE_GAP / 2; pcm = silence(lead); cur = lead; cues = []
     for j, phrase in enumerate(sl['s']):
-        tmp = f'{OUT}tmp.wav'
-        with wave.open(tmp, 'wb') as wf: voice.synthesize_wav(phrase, wf, syn_config=cfg)
-        with wave.open(tmp, 'rb') as wr: data = wr.readframes(wr.getnframes())
-        dur = len(data) / 2 / RATE; cues.append((t0 + cur, t0 + cur + dur, subs[j])); pcm += data; cur += dur
-        pcm += silence(GAP if j < len(sl['s']) - 1 else TAIL); cur += GAP if j < len(sl['s']) - 1 else TAIL
+        data = phrase_pcm(phrase); dur = len(data) / 2 / RATE
+        cues.append((t0 + cur, t0 + cur + dur, subs[j])); pcm += data; cur += dur
+        pause = GAP if j < len(sl['s']) - 1 else (SLIDE_GAP / 2 if i < len(S) - 1 else 1.2); pcm += silence(pause); cur += pause
     with wave.open(f'{OUT}a{i:02d}.wav', 'wb') as wf: wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(RATE); wf.writeframes(pcm)
     timeline.append(dict(i=i, debut=t0, duree=cur, cues=cues)); t0 += cur
-    print(f'{sl["id"]:12} {cur:5.1f} s')
+    print(f'{sl["id"]:12} {cur:5.1f} s', flush=True)
 print(f'TOTAL {t0:.1f} s')
 
 # ------------------------------------------------------------------ sous-titres (ASS)
