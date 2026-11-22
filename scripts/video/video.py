@@ -50,6 +50,24 @@ S = [
       sub=["Wergui SN, en partenariat avec Groupe Référence Afrique.", "Essayez gratuitement sur werguisn.pages.dev"]),
 ]
 
+
+if os.environ.get('COURT'):   # version courte (~1 min) : l'essentiel
+    P = {x['id']: x for x in S}
+    def sl(id, s, sub=None, **kw): d = dict(P[id]); d.update(kw); d['s'] = s; d['sub'] = sub or s; return d
+    S = [
+     sl('intro', ["Ouergui ès ène, avec Groupe Référence Afrique : la gestion de stock pensée pour les pharmacies du Sénégal."], ["Wergui SN, avec Groupe Référence Afrique : la gestion de stock pensée pour les pharmacies du Sénégal."]),
+     sl('dashboard', ["Fini le cahier : chaque matin, le tableau de bord vous dit quoi faire."], k='Tableau de bord'),
+     sl('scanner', ["Scannez une boîte : le médicament, le lot et la date de péremption se remplissent tout seuls."], k='Scanner'),
+     sl('caisse', ["À la caisse, les lots qui périment en premier sortent en premier. Vous encaissez en espèces, par Wave ou Orange Money."], k='Caisse'),
+     sl('peremptions', ["Ouergui ès ène vous alerte trois mois avant la péremption, pour vendre ou rendre au grossiste à temps."], ["Wergui SN vous alerte 3 mois avant la péremption, pour vendre ou rendre au grossiste à temps."], k='Péremptions'),
+     sl('commandes', ["Les commandes se calculent toutes seules, et partent par WhatsApp."], k='Commandes'),
+     sl('finances2', ["La caisse, les assurances et le bénéfice du mois sont suivis automatiquement."], k='Finances', t='Votre argent sous contrôle', b=['Caisse ouverte et clôturée', 'Assurances et grossistes', 'Bénéfice du mois']),
+     sl('mobile', ["Sur téléphone, tablette ou ordinateur, même sans internet."], b=['Téléphone, tablette, ordinateur', 'Même sans internet', 'En français']),
+     sl('tarifs', ["À partir de quinze mille francs par mois, avec un mois d'essai gratuit."], ["À partir de 15 000 F par mois, avec un mois d'essai gratuit."]),
+     sl('outro', ["Essayez gratuitement sur ouergui ès ène, point pages, point dev."], ["Essayez gratuitement sur werguisn.pages.dev"]),
+    ]
+    OUT = D + '/build_court/'; os.makedirs(OUT, exist_ok=True)
+
 # ------------------------------------------------------------------ voix (edge-tts, fr-CH-FabriceNeural, vitesse normale)
 import asyncio, edge_tts
 RATE = 24000; GAP, SLIDE_GAP = 0.8, 1.1

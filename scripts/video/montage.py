@@ -1,5 +1,5 @@
 import json, subprocess, os, sys
-B = os.path.dirname(os.path.abspath(__file__)) + '/build/'; tl = json.load(open(B + 'timeline.json')); X = 0.5; FPS = 30
+B = os.path.dirname(os.path.abspath(__file__)) + ('/build_court/' if os.environ.get('COURT') else '/build/'); tl = json.load(open(B + 'timeline.json')); X = 0.5; FPS = 30
 NOM = sys.argv[1] if len(sys.argv) > 1 else 'Wergui_SN_presentation'
 run = lambda c: subprocess.run(c, check=True, capture_output=True)
 n = len(tl)
